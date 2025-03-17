@@ -10,14 +10,14 @@ The ESP Controlled Rocket repository is a comprehensive project that brings toge
 - [Flight Computer](#flight-computer)
   - [Features](#features)
   - [Code Overview](#code-overview)
-  - ![Flight Computer Screenshot](media/flight_computer_dashboard.png)
+  - [Flight Computer Screenshot](#flight-computer-screenshot)
 - [3D Designs](#3d-designs)
   - [Overview of 3D Models](#overview-of-3d-models)
   - ![3D Design Overview](media/3d_design_overview.png)
 - [Assembly & Build](#assembly--build)
 - [Usage](#usage)
 - [Contributing](#contributing)
-- [License](#license)
+
 
 ---
 
@@ -78,6 +78,8 @@ The flight computer code is divided into several modules:
 
 For more details on the flight computer code, please refer to the [Flight Computer Code Documentation](docs/flight_computer.md).
 
+
+### Flight Computer Screenshot
 ![Flight Computer Screenshot](media/flight_computer_dashboard.png)
 
 ---
@@ -134,6 +136,7 @@ For detailed build instructions, please refer to the [Assembly Guide](docs/assem
    ```cpp
    const char* ssid = "TDGC-Rocket";
    const char* wifiPassword = "Rocket2022!";
+
 ## WiFi Connection Fallback
 
 If the connection fails, the device will switch to access point mode.
