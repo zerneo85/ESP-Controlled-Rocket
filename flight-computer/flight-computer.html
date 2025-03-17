@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta name='viewport' content='width=device-width,initial-scale=1'>
+    <title>Flight Computer</title>
+    <style>
+        body {
+            background-color: #EEEEEE;
+            font-family: Arial, sans-serif;
+            color: #003366;
+            margin: 0;
+            padding: 20px
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px
+        }
+
+        .data-table {
+            margin: 0 auto;
+            border-collapse: collapse;
+            width: 90%;
+            max-width: 600px;
+            background-color: #FFF;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1)
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px 15px;
+            border: 1px solid #CCC;
+            text-align: left
+        }
+
+        .data-table th {
+            background-color: #003366;
+            color: #FFF
+        }
+
+        .data-table tr:nth-child(even) {
+            background-color: #F9F9F9
+        }
+
+        .button-container {
+            text-align: center;
+            margin-top: 20px
+        }
+
+        button {
+            background-color: #003366;
+            color: #FFF;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer
+        }
+
+        button:hover {
+            background-color: #0055AA
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Flight Information</h1>
+    <table class='data-table'>
+        <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Absolute Altitude</td>
+            <td id='AbsoluteAltitude'>-</td>
+        </tr>
+        <tr>
+            <td>Relative Altitude</td>
+            <td id='RelativeAltitude'>-</td>
+        </tr>
+        <tr>
+            <td>Altitude Drop</td>
+            <td id='AltitudeDrop'>-</td>
+        </tr>
+        <tr>
+            <td>BMP280 Temp</td>
+            <td id='BMP280Temp'>-</td>
+        </tr>
+        <tr>
+            <td>BMP280 Pressure</td>
+            <td id='BMP280Pressure'>-</td>
+        </tr>
+        <tr>
+            <td>MPU6050 Temp</td>
+            <td id='MPU6050Temp'>-</td>
+        </tr>
+        <tr>
+            <td>Accelerometer</td>
+            <td id='Accelerometer'>-</td>
+        </tr>
+        <tr>
+            <td>Gyroscope</td>
+            <td id='Gyroscope'>-</td>
+        </tr>
+        <tr>
+            <td>Parachute Status</td>
+            <td id='ParachuteStatus'>-</td>
+        </tr>
+        <tr>
+            <td>Local Pressure</td>
+            <td id='LocalPressure'>-</td>
+        </tr>
+        <tr>
+            <td>Default Sea-Level Pressure</td>
+            <td id='DefaultSeaLevelPressure'>-</td>
+        </tr>
+        <tr>
+            <td>API Status</td>
+            <td id='APIStatus'>-</td>
+        </tr>
+        <tr>
+            <td>Max Abs Altitude</td>
+            <td id='MaxAbsAltitude'>-</td>
+        </tr>
+        <tr>
+            <td>Min Abs Altitude</td>
+            <td id='MinAbsAltitude'>-</td>
+        </tr>
+        <tr>
+            <td>Max Rel Altitude</td>
+            <td id='MaxRelAltitude'>-</td>
+        </tr>
+        <tr>
+            <td>Min Rel Altitude</td>
+            <td id='MinRelAltitude'>-</td>
+        </tr>
+    </table>
+    <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button></div>
+    <script>
+        var Socket;
+        document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
+
+        function init() {
+            Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+            Socket.onmessage = function(event) {
+                processCommand(event);
+            };
+        }
+
+        function button_send_back() {
+            var msg = {
+                parachute: 'Armed'
+            };
+            Socket.send(JSON.stringify(msg));
+        }
+
+        function processCommand(event) {
+            var obj = JSON.parse(event.data);
+            document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-';
+            document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-';
+            document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-';
+            document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-';
+            document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-';
+            document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-';
+            document.getElementById('Accelerometer').innerHTML = obj.Accelerometer || '-';
+            document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-';
+            document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-';
+            document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-';
+            document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-';
+            document.getElementById('APIStatus').innerHTML = obj.APIStatus || '-';
+            document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-';
+            document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-';
+            document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-';
+            document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';
+        }
+        window.onload = function(event) {
+            init();
+        }
+    </script>
+</body>
+
+</html>
