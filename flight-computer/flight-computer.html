@@ -115,8 +115,8 @@
             <td id='DefaultSeaLevelPressure'>-</td>
         </tr>
         <tr>
-            <td>API Status</td>
-            <td id='APIStatus'>-</td>
+            <td>Pressure Source</td>
+            <td id='PressureSource'>-</td>
         </tr>
         <tr>
             <td>Max Abs Altitude</td>
@@ -133,6 +133,14 @@
         <tr>
             <td>Min Rel Altitude</td>
             <td id='MinRelAltitude'>-</td>
+        </tr>
+        <tr>
+            <td>Total Space (MB)</td>
+            <td id='TotalSpace'>-</td>
+        </tr>
+        <tr>
+            <td>Used Space (MB)</td>
+            <td id='UsedSpace'>-</td>
         </tr>
     </table>
     <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button></div>
@@ -167,11 +175,13 @@
             document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-';
             document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-';
             document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-';
-            document.getElementById('APIStatus').innerHTML = obj.APIStatus || '-';
+            document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-';
             document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-';
             document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-';
             document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-';
             document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';
+            document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';
+            document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';
         }
         window.onload = function(event) {
             init();
