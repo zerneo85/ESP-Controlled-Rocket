@@ -11,41 +11,47 @@
  * - Each sensor log line now includes the current SD card TotalSpace and UsedSpace values.
  */
 
+
+
+#include "esp_camera.h"            // Camera driver
+
 // -----------------------
 // I2C Pin Definitions
 // -----------------------
 // Sensor bus (I2C_NUM_1)
 #define SDA_1 42
 #define SCL_1 37
-// Camera bus (I2C_NUM_0) - override default SCCB pins:
+// Camera bus (I2C_NUM_0) – override default SCCB pins:
 #define SDA_2 4
 #define SCL_2 5
 
 // -----------------------
-// Override Camera I2C (SCCB) Pins Before Including camera_pins.h
-// These definitions force the camera to use GPIO4 for SDA and GPIO5 for SCL.
-#undef SIOD_GPIO_NUM
-#undef SIOC_GPIO_NUM
-#define SIOD_GPIO_NUM SDA_2
-#define SIOC_GPIO_NUM SCL_2
+// Override Camera SCCB Pins Before Including camera_pins.h
+// These definitions force the camera to use SDA_2 and SCL_2.
+//#undef SIOD_GPIO_NUM
+//#undef SIOC_GPIO_NUM
+//#define SIOD_GPIO_NUM SDA_2
+//#define SIOC_GPIO_NUM SCL_2
 #define CAMERA_MODEL_ESP32S3_EYE
-#include "camera_pins.h"  // This now uses our overridden pins for the camera
+#include "camera_pins.h"  // Now uses our overridden pins for the camera
 
 // -----------------------
 // Library Inclusions
 // -----------------------
 
-// Rename sensor_t to prevent conflicts with ESP32 Camera
+// Rename sensor_t to prevent conflicts with the camera driver
 #define sensor_t adafruit_sensor_t
-#include <Adafruit_MPU6050.h> // For MPU-6050 sensor
+#include <Adafruit_MPU6050.h> // For MPU6050 sensor
 #include <Adafruit_BMP280.h>  // For BMP280 sensor
 #undef sensor_t
 
-#include <Wire.h>                  // I2C communication
+
+
+#include <Wire.h>                  // I²C communication
 #include <Adafruit_Sensor.h>       // Unified sensor library
 
 #include <SD_MMC.h>                // SD card interface for ESP32-S3
-#include "sd_read_write.h"         // Helper functions for SD card operations (e.g., appendFile)
+#include "sd_read_write.h"         // Helper functions for SD card operations
 #include <ESP32Servo.h>            // Servo control library for ESP32
 #include <WiFi.h>                  // WiFi connectivity
 #include <WiFiUdp.h>               // UDP library (for NTP)
@@ -58,7 +64,6 @@
 #include <HTTPUpdateServer.h>      // HTTP update server library
 #include <ESPmDNS.h>               // mDNS for network service discovery
 #include <EEPROM.h>                // EEPROM library for non-volatile storage
-#include "esp_camera.h"            // Camera driver
 
 // -----------------------
 // Macro Definitions
@@ -70,14 +75,14 @@
 // Global Variables
 // -----------------------
 
-// Set this flag to false to skip camera initialization (for testing I2C conflicts)
-bool cameraEnabled = false;
+// Flag to control camera initialization.
+bool cameraEnabled = true;
 
 uint64_t totalSpace;
 uint64_t usedSpace;
 
 String PressureSource = "";
-float lastLocalPressure = 1026.0;  // Default/fallback sea-level pressure (in hPa)
+float lastLocalPressure = 1026.0;  // Default/fallback sea-level pressure (hPa)
 
 bool apiPressureUpdated = false;
 
@@ -92,7 +97,7 @@ bool timelapseActive = false;
 unsigned long lastTimelapseCapture = 0;
 const unsigned long timelapseInterval = 500; // 0.5 seconds
 
-// WiFi and AP Credentials
+// WiFi Credentials
 const char* ssid = "TDGC-Rocket";
 const char* wifiPassword = "Rocket2022!";
 const char* apSSID = "RocketAP";
@@ -143,16 +148,17 @@ HTTPUpdateServer httpUpdater;  // For OTA updates
 #define SD_MMC_D0  40
 
 // -----------------------
-// I2C Bus Instances
+// I2C Bus Instance for Sensors
 // -----------------------
-// For sensors: use I2C_NUM_1 with SDA_1 and SCL_1.
-TwoWire sensorBus = TwoWire(1);
-// The camera will use the default I2C (I2C_NUM_0) which now uses SIOD_GPIO_NUM and SIOC_GPIO_NUM defined above.
+// Sensors are connected on I2C_NUM_1 (using SDA_1 and SCL_1).
+//TwoWire sensorBus = TwoWire(1);
+
+// The camera will use the default Wire (I2C_NUM_0) with our overridden SCCB pins (SDA_2/SCL_2).
 
 // -----------------------
 // Sensor Instances
 // -----------------------
-Adafruit_BMP280 bmp(&sensorBus); // BMP280 sensor instance on sensorBus (I2C_NUM_1)
+Adafruit_BMP280 bmp; // BMP280 sensor instance on sensorBus (I2C_NUM_1)
 Adafruit_MPU6050 mpu;             // MPU6050 sensor instance
 
 // -----------------------
@@ -269,7 +275,7 @@ void parachuteArmed() {
                       Adafruit_BMP280::STANDBY_MS_500);
       baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
     } else {
-      baselineAltitude = 0;  // Fallback if sensor is missing
+      baselineAltitude = 0;
     }
     baselineCaptured = true;
     Serial.print("Baseline altitude captured: ");
@@ -341,8 +347,8 @@ int cameraSetup(void) {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM; // Now uses SDA_2 (GPIO4)
-  config.pin_sccb_scl = SIOC_GPIO_NUM; // Now uses SCL_2 (GPIO5)
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
@@ -353,25 +359,30 @@ int cameraSetup(void) {
   config.jpeg_quality = 12;
   config.fb_count = 1;
   
-  if(psramFound()){
+  // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
+  // for larger pre-allocated frame buffer.
+  if (psramFound()) {
     config.jpeg_quality = 10;
     config.fb_count = 2;
     config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
+    // Limit the frame size when PSRAM is not available
     config.frame_size = FRAMESIZE_SVGA;
     config.fb_location = CAMERA_FB_IN_DRAM;
   }
 
+  // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
     return 0;
   }
 
-  sensor_t * s = esp_camera_sensor_get();
-  s->set_vflip(s, 1);
-  s->set_brightness(s, 1);
-  s->set_saturation(s, 0);
+  sensor_t *s = esp_camera_sensor_get();
+  // initial sensors are flipped vertically and colors are a bit saturated
+  s->set_vflip(s, 1);       // flip it back
+  s->set_brightness(s, 1);  // up the brightness just a bit
+  s->set_saturation(s, 0);  // lower the saturation
 
   Serial.println("Camera configuration complete!");
   return 1;
@@ -385,11 +396,11 @@ int getNextPhotoIndex(fs::FS &fs, const char * directory) {
   }
   int maxIndex = 0;
   File file = root.openNextFile();
-  while(file) {
+  while (file) {
     String fileName = file.name();
     int index;
-    if(sscanf(fileName.c_str(), "/camera/%d.jpg", &index) == 1) {
-      if(index >= maxIndex) {
+    if (sscanf(fileName.c_str(), "/camera/%d.jpg", &index) == 1) {
+      if (index >= maxIndex) {
         maxIndex = index + 1;
       }
     }
@@ -528,11 +539,14 @@ void setup() {
   Serial.printf("Total space: %lluMB\n", totalSpace);
   Serial.printf("Used space: %lluMB\n", usedSpace);
   
-  // Initialize I2C1 for sensors using SDA_1 and SCL_1 (GPIO42 and GPIO37)
-  sensorBus.begin(SDA_1, SCL_1, 100000);
+  // Initialize sensor I²C bus (I2C_NUM_1) for sensors
+  //sensorBus.begin(SDA_1, SCL_1, 100000);
+
+    // Initialize the default I2C bus for BMP280 on pins 41 (SDA) and 37 (SCL)
+  Wire.begin(42, 37);
   
   // Try to initialize MPU6050 sensor on sensorBus
-  if (mpu.begin(0x68, &sensorBus)) {
+  if (mpu.begin(0x68)) {
     mpuFound = true;
     Serial.println("MPU6050 sensor found.");
   } else {
@@ -578,13 +592,16 @@ void setup() {
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   
-  // Conditionally initialize the camera (which now uses I2C_NUM_0 with our overridden pins SDA_2 and SCL_2)
+  // IMPORTANT: Initialize the default I²C bus (I2C_NUM_0) for the camera.
+  // The camera driver (esp_camera) uses the default Wire instance.
+  Wire.begin(SDA_2, SCL_2, 100000);
+  
+  // Conditionally initialize the camera (which uses default Wire on I2C_NUM_0 with our overridden pins)
   if (cameraEnabled) {
-    if(cameraSetup() == 1){
+    if (cameraSetup() == 1) {
       Serial.println("Camera initialized successfully");
     } else {
       Serial.println("Camera initialization failed");
-      // Continue execution even if the camera fails.
     }
   } else {
     Serial.println("Camera initialization skipped (camera disabled).");
