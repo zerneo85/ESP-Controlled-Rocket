@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <meta name='viewport' content='width=device-width,initial-scale=1'>
     <title>Flight Computer</title>
@@ -12,12 +11,10 @@
             margin: 0;
             padding: 20px
         }
-
         h1 {
             text-align: center;
             margin-bottom: 20px
         }
-
         .data-table {
             margin: 0 auto;
             border-collapse: collapse;
@@ -26,43 +23,37 @@
             background-color: #FFF;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1)
         }
-
         .data-table th,
         .data-table td {
             padding: 12px 15px;
             border: 1px solid #CCC;
             text-align: left
         }
-
         .data-table th {
             background-color: #003366;
             color: #FFF
         }
-
         .data-table tr:nth-child(even) {
             background-color: #F9F9F9
         }
-
         .button-container {
             text-align: center;
             margin-top: 20px
         }
-
         button {
             background-color: #003366;
             color: #FFF;
             border: none;
             padding: 10px 20px;
             font-size: 16px;
-            cursor: pointer
+            cursor: pointer;
+            margin: 5px;
         }
-
         button:hover {
             background-color: #0055AA
         }
     </style>
 </head>
-
 <body>
     <h1>Flight Information</h1>
     <table class='data-table'>
@@ -143,10 +134,14 @@
             <td id='UsedSpace'>-</td>
         </tr>
     </table>
-    <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button></div>
+    <div class='button-container'>
+        <button type='button' id='BTN_SEND_BACK'>Arm Parachute</button>
+        <button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button>
+    </div>
     <script>
         var Socket;
         document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
+        document.getElementById('BTN_START_TIMELAPSE').addEventListener('click', button_start_timelapse);
 
         function init() {
             Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
@@ -158,6 +153,13 @@
         function button_send_back() {
             var msg = {
                 parachute: 'Armed'
+            };
+            Socket.send(JSON.stringify(msg));
+        }
+        
+        function button_start_timelapse() {
+            var msg = {
+                timelapse: 'start'
             };
             Socket.send(JSON.stringify(msg));
         }
@@ -183,10 +185,10 @@
             document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';
             document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';
         }
+        
         window.onload = function(event) {
             init();
         }
     </script>
 </body>
-
 </html>
