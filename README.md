@@ -1,6 +1,6 @@
 # ESP Controlled Rocket
 
-The ESP Controlled Rocket repository is a comprehensive project that brings together an advanced flight computer system along with detailed 3D printing designs to build and launch a rocket. The project includes embedded firmware for real-time telemetry, sensor integration, parachute deployment, OTA updates, and a complete set of 3D models for printing the rocket parts.
+The ESP Controlled Rocket repository is a comprehensive project that brings together an advanced flight computer system along with detailed 3D printing designs to build and launch a rocket. The project includes embedded firmware for real-time telemetry, sensor integration, parachute deployment, and a complete set of 3D models for printing the rocket parts.
 
 ---
 
@@ -13,93 +13,64 @@ The ESP Controlled Rocket repository is a comprehensive project that brings toge
   - [Flight Computer Screenshot](#flight-computer-screenshot)
 - [3D Designs](#3d-designs)
   - [Overview of 3D Models](#overview-of-3d-models)
-  - ![3D Design Overview](media/3d_design_overview.png)
 - [Assembly & Build](#assembly--build)
 - [Usage](#usage)
 - [Contributing](#contributing)
-
 
 ---
 
 ## Introduction
 
-The **ESP Controlled Rocket** project combines state-of-the-art embedded firmware with practical, ready-to-print 3D designs to create a complete rocket system. The flight computer manages sensor data, performs real-time logging and telemetry, and controls a parachute deployment mechanism, while the 3D designs guide you in printing and assembling the physical components of the rocket.
+The **ESP Controlled Rocket** project combines state-of-the-art embedded firmware with ready-to-print 3D designs to create a complete rocket system. The flight computer manages sensor data, logs flight events, and controls the parachute deployment mechanism while also now featuring camera integration for real-time image capture and timelapse functionality.
 
 ---
 
 ## Flight Computer
-
-This section covers the firmware running on the ESP32, responsible for flight data acquisition, parachute deployment, OTA updates, and web-based telemetry.
 
 ### Features
 
 - **Sensor Integration:**  
   - **BMP280 Sensor:** Reads temperature, pressure, and computes altitude.
   - **MPU6050 Sensor:** Provides accelerometer, gyroscope data, and sensor temperature.
-  
 - **Real-Time Telemetry:**  
-  - Web server with WebSocket support serves a live dashboard.
-  - Displays parameters like absolute/relative altitude, temperature, pressure, inertial data, and parachute status.
-  
+  - A web server with WebSocket support streams live flight data including altitude, temperature, and inertial measurements.
 - **Parachute Deployment:**  
-  - Monitors altitude drop and triggers a servo to release the parachute when a threshold is exceeded.
-  
-- **SD Card Logging:**  
-  - All telemetry and key events are logged to an SD card for post-flight analysis.
-  
+  - Monitors altitude drop to trigger the servo-controlled parachute release.
+- **Enhanced SD Card Logging:**  
+  - Logs flight data, captured images, and detailed debug information.
+- **Camera Integration & Timelapse Imaging:**  
+  - Supports high-resolution image capture via an integrated camera module.
+  - Offers timelapse mode to capture images at regular intervals.
+- **Debug & Serial Output:**  
+  - Improved debug options allow for granular monitoring of sensor data, camera operations, and timelapse events.
 - **WiFi Connectivity & OTA Updates:**  
-  - Automatically connects to a predefined network or sets up an access point if needed.
-  - Supports remote firmware updates via an HTTP OTA endpoint.
-  
+  - Automatically connects to a predefined network or sets up an access point.
+  - Supports remote firmware updates through an HTTP OTA endpoint.
 - **Time Synchronization:**  
-  - Uses NTP for accurate timestamping of logs and events.
-  
-- **API Integration:**  
-  - Retrieves local sea-level pressure from OpenWeatherMap to refine altitude calculations.
+  - Uses NTP to provide accurate timestamps for logging.
 
 ### Code Overview
 
-The flight computer code is divided into several modules:
-
-- **Library Inclusions:**  
-  The code uses libraries for sensor management, SD card operations, WiFi, OTA updates, web server functionalities, and JSON handling.
-
-- **Sensor Initialization & Data Acquisition:**  
-  Two I2C buses are used to connect the BMP280 and MPU6050 sensors. Data from these sensors is processed to compute absolute and relative altitude, as well as to monitor environmental and inertial parameters.
-
-- **Parachute Control Logic:**  
-  The firmware captures a baseline altitude when arming the parachute. A significant altitude drop triggers the parachute release via a servo mechanism.
-
-- **Web Server & Telemetry Dashboard:**  
-  A lightweight web server provides a dashboard to monitor live flight data. WebSockets broadcast JSON-formatted telemetry to the client browser.
-
-- **Logging & OTA Updates:**  
-  All flight data and events are logged on an SD card, and the firmware supports OTA updates using mDNS for simplified network access.
-
-For more details on the flight computer code, please refer to the [Flight Computer Code Documentation](docs/flight_computer.md).
-
+The flight computer firmware is organized into modules that handle sensor management, camera initialization, data processing, SD card logging, web communication, and OTA updates. New functions include `cameraSetup()`, `captureAndSavePicture()`, and timelapse controls integrated into both the firmware and the web interface.
 
 ### Flight Computer Screenshot
+
 ![Flight Computer Screenshot](media/flight_computer_dashboard.png)
 
 ---
 
 ## 3D Designs
 
-In addition to the firmware, this repository contains 3D printing designs for the rocket's structure and components. The models are optimized for easy printing and assembly.
+The repository includes 3D printing designs for the rocket's structure and components. The models are optimized for easy printing and assembly.
 
 ### Overview of 3D Models
 
 - **Rocket Body:**  
-  The main body design includes compartments for the electronics, payload, and fuel system.
-
+  Main structure with compartments for the electronics, payload, and fuel system.
 - **Nose Cone & Fins:**  
-  Detailed designs for the aerodynamic nose cone and stabilizing fins ensure optimal flight performance.
-
+  Aerodynamic designs to ensure optimal flight performance.
 - **Assembly Parts:**  
-  Custom brackets and mounting fixtures to securely integrate the flight computer and sensors into the rocket.
-
-For a visual overview of the designs, please see the screenshot below:
+  Custom brackets and mounting fixtures to integrate the flight computer and sensors securely.
 
 ![3D Design Overview](media/3d_design_overview.png)
 
@@ -109,21 +80,7 @@ Detailed 3D model files (.STL) and assembly instructions can be found in the [3d
 
 ## Assembly & Build
 
-This chapter outlines the steps to assemble your ESP Controlled Rocket:
-
-1. **3D Print the Components:**  
-   - Use the provided STL files to print the rocket body, nose cone, fins, and mounting parts.
-   - Ensure proper print settings for high quality and durability.
-
-2. **Hardware Integration:**  
-   - Install the ESP32 flight computer into the designated compartment.
-   - Connect the sensors (BMP280 and MPU6050), SD card module, servo, and other peripherals following the wiring diagrams.
-
-3. **Final Assembly:**  
-   - Assemble the printed components.
-   - Secure all electronics and ensure proper alignment for aerodynamic stability.
-
-For detailed build instructions, please refer to the [Assembly Guide](docs/assembly_guide.md).
+For detailed build instructions, refer to the [Assembly Guide](docs/assembly_guide.md). The guide covers component assembly, wiring, and final system integration including the new camera and timelapse wiring.
 
 ---
 
@@ -137,35 +94,55 @@ For detailed build instructions, please refer to the [Assembly Guide](docs/assem
    const char* ssid = "TDGC-Rocket";
    const char* wifiPassword = "Rocket2022!";
 
-## WiFi Connection Fallback
 
 If the connection fails, the device will switch to access point mode.
 
-2. **OTA Updates:**
-
+2. **OTA Updates**
 Access the OTA update page by navigating to [http://esp32-webupdate.local/update](http://esp32-webupdate.local/update) once the device is connected to WiFi.
 
 3. **Running the Code**
-
 Compile and upload the code to your ESP32 using the Arduino IDE or PlatformIO.
 
-## Monitoring Flight Data
+## Debugging and Logging Variables
+The firmware includes several variables that control debugging output and logging behavior. These variables can be adjusted to fine-tune what information is output to the serial console or logged to the SD card:
 
-- Use any web browser to access the live telemetry dashboard served by the ESP32.
-- The dashboard displays real-time flight data including:
-  - Altitude
-  - Temperature
-  - Inertial measurements
-  - Parachute status
-- For further details on usage, check out the [User Manual](docs/user_manual.md).
+- **enableSensorSerialLog (default: true):**  
+  Master toggle for sensor serial logging. When enabled, sensor readings and key events are printed to the serial monitor for debugging purposes.
+
+- **logBMP280Data (default: false):**  
+  Controls whether data from the BMP280 sensor (temperature, pressure, altitude) is logged to the serial output.
+
+- **logMPU6050Data (default: false):**  
+  Controls whether data from the MPU6050 sensor (accelerometer, gyroscope, temperature) is logged to the serial output.
+
+- **logSpaceUsage (default: true):**  
+  Toggles logging of SD card space usage information, showing total and used space values.
+
+- **showCameraOutput (default: true):**  
+  Enables debug messages related to camera initialization and picture capture events. If disabled, camera-related messages will not appear in the serial output.
+
+- **showTimelapseOutput (default: true):**  
+  Enables debug messages for timelapse operations, including start, stop, and image capture notifications.
+
+- **showSensorInitLog (default: true):**  
+  Controls whether sensor initialization (detection and configuration) messages are printed to the serial monitor.
+
+- **cameraEnabled (default: true):**  
+  Determines if the camera functionality is active. Setting this to false will skip camera initialization and image capture routines.
+
+- **timelapseActive (default: false at startup):**  
+  Indicates whether timelapse image capture is currently active. This is controlled through the web interface using start/stop commands.
+
+Adjust these variables in your firmware code to increase or decrease the verbosity of debug messages and control which modules are active during your tests.
+
+## Monitoring Flight Data
+- Access the live telemetry dashboard via any web browser.
+- The dashboard displays real-time flight data, including altitude, temperature, inertial measurements, camera status, and timelapse mode state.
+- Use the provided buttons to arm the parachute and start/stop timelapse image capture.
 
 ## Contributing
-
 Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository.
-2. Create a new branch for your feature or bugfix.
-3. Commit your changes with clear messages.
-4. Submit a pull request with a detailed description of your changes.
-
-
+- Fork the repository.
+- Create a new branch for your feature or bugfix.
+- Commit your changes with clear messages.
+- Submit a pull request with a detailed description of your changes.

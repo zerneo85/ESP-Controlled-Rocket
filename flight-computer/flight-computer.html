@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta name='viewport' content='width=device-width,initial-scale=1'>
     <title>Flight Computer</title>
@@ -9,37 +10,44 @@
             font-family: Arial, sans-serif;
             color: #003366;
             margin: 0;
-            padding: 20px
+            padding: 20px;
         }
+
         h1 {
             text-align: center;
-            margin-bottom: 20px
+            margin-bottom: 20px;
         }
+
         .data-table {
             margin: 0 auto;
             border-collapse: collapse;
             width: 90%;
             max-width: 600px;
             background-color: #FFF;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1)
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
+
         .data-table th,
         .data-table td {
             padding: 12px 15px;
             border: 1px solid #CCC;
-            text-align: left
+            text-align: left;
         }
+
         .data-table th {
             background-color: #003366;
-            color: #FFF
+            color: #FFF;
         }
+
         .data-table tr:nth-child(even) {
-            background-color: #F9F9F9
+            background-color: #F9F9F9;
         }
+
         .button-container {
             text-align: center;
-            margin-top: 20px
+            margin-top: 20px;
         }
+
         button {
             background-color: #003366;
             color: #FFF;
@@ -49,11 +57,13 @@
             cursor: pointer;
             margin: 5px;
         }
+
         button:hover {
-            background-color: #0055AA
+            background-color: #0055AA;
         }
     </style>
 </head>
+
 <body>
     <h1>Flight Information</h1>
     <table class='data-table'>
@@ -133,15 +143,17 @@
             <td>Used Space (MB)</td>
             <td id='UsedSpace'>-</td>
         </tr>
+        <tr>
+            <td>Timelapse Status</td>
+            <td id='TimelapseStatus'>-</td>
+        </tr>
     </table>
-    <div class='button-container'>
-        <button type='button' id='BTN_SEND_BACK'>Arm Parachute</button>
-        <button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button>
-    </div>
+    <div class='button-container'> <button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button> <button type='button' id='BTN_STOP_TIMELAPSE'>Stop Picture Timelapse</button> </div>
     <script>
         var Socket;
         document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
         document.getElementById('BTN_START_TIMELAPSE').addEventListener('click', button_start_timelapse);
+        document.getElementById('BTN_STOP_TIMELAPSE').addEventListener('click', button_stop_timelapse);
 
         function init() {
             Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
@@ -156,10 +168,17 @@
             };
             Socket.send(JSON.stringify(msg));
         }
-        
+
         function button_start_timelapse() {
             var msg = {
                 timelapse: 'start'
+            };
+            Socket.send(JSON.stringify(msg));
+        }
+
+        function button_stop_timelapse() {
+            var msg = {
+                timelapse: 'stop'
             };
             Socket.send(JSON.stringify(msg));
         }
@@ -184,11 +203,12 @@
             document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';
             document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';
             document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';
+            document.getElementById('TimelapseStatus').innerHTML = obj.TimelapseStatus || '-';
         }
-        
         window.onload = function(event) {
             init();
         }
     </script>
 </body>
+
 </html>
