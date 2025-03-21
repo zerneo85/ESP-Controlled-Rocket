@@ -55,7 +55,7 @@ The flight computer firmware is organized into modules that handle sensor manage
 
 ### Flight Computer Screenshot
 
-![Flight Computer Screenshot](blob/main/media/flight_computer_dashboard.png)
+![Flight Computer Screenshot](media/flight_computer_dashboard_4.png)
 
 ---
 
