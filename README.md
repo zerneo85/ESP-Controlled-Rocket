@@ -90,7 +90,6 @@ For detailed build instructions, refer to the [Assembly Guide](docs/assembly_gui
 
 1. **WiFi Configuration:**  
    Update the network credentials in the firmware:
-   ```cpp
    const char* ssid = "TDGC-Rocket";
    const char* wifiPassword = "Rocket2022!";
 
