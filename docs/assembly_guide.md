@@ -35,6 +35,7 @@ Before beginning the assembly, ensure you have the following:
   - MPU6050 Sensor
   - Servo Motor (for parachute deployment)
   - SD Card Module
+  - **Camera Module:** For real-time image capture and timelapse functionality.
   - Wiring and Connectors
 - **Tools:**
   - 3D Printer (with proper filament)
@@ -72,21 +73,25 @@ Ensure that all electronic components are available and in good condition:
 - **BMP280 & MPU6050 Sensors:** For altitude and inertial measurements.
 - **Servo Motor:** Used to actuate the parachute release mechanism.
 - **SD Card Module:** For logging flight data.
+- **Camera Module:** Provides high-resolution image capture and timelapse capabilities.
 - **Cables and Connectors:** Use appropriate gauge wires for secure connections.
 
 ## Wiring and Electronics Integration
 
 1. **Sensor Connections:**
    - **BMP280:** Connect to the I2C bus defined on pins (SDA_1, SCL_1).
-   - **MPU6050:** Connect to a separate I2C bus (SDA_2, SCL_2) for isolation.
+   - **MPU6050:** Connect to a separate I2C bus for improved isolation.
 2. **Servo Motor:**
    - Connect the signal wire to the designated servo pin on the ESP32.
    - Ensure proper power supply as per servo specifications.
 3. **SD Card Module:**
    - Follow the pin definitions (SD_MMC_CMD, SD_MMC_CLK, SD_MMC_D0) for proper connection.
-4. **Power Management:**
+4. **Camera Module & Timelapse Wiring:**
+   - Connect the camera module to the designated I2C pins (SDA_2, SCL_2) and power it according to the specifications.
+   - Verify that the camera's field of view is unobstructed.
+5. **Power Management:**
    - Ensure that all components are powered by a stable supply.
-   - Check voltage levels to avoid damage to sensors and the ESP32.
+   - Check voltage levels to avoid damage to sensors, the ESP32, or the camera.
 
 *Refer to the wiring diagram provided in the `docs` folder for detailed pin connections and layout.*
 
@@ -98,9 +103,10 @@ Ensure that all electronic components are available and in good condition:
 2. **Mounting the Electronics:**
    - Secure the ESP32 and peripheral modules using the printed mounting brackets.
    - Route wires neatly to avoid interference and potential disconnections.
-3. **Installing the Parachute Mechanism:**
-   - Attach the servo motor in the designated compartment.
-   - Verify that the servo movement is unobstructed.
+3. **Installing the Parachute & Camera Mechanisms:**
+   - Attach the servo motor in the designated compartment for parachute deployment.
+   - Mount the camera module securely ensuring its lens is clear.
+   - Verify that the timelapse wiring and controls are properly integrated.
 4. **Final Integration:**
    - Fit the nose cone and fins into place.
    - Confirm that all parts are securely fastened.
@@ -108,32 +114,31 @@ Ensure that all electronic components are available and in good condition:
 ## Final Assembly and Testing
 
 1. **Pre-Flight Check:**
-   - Double-check all wiring and mounting.
-   - Ensure that the sensors are correctly aligned and unobstructed.
+   - Double-check all wiring, mounting, and component alignments.
+   - Ensure sensors and camera are correctly aligned and unobstructed.
 2. **Power On and Diagnostics:**
    - Upload the flight computer firmware and power on the system.
-   - Use the serial monitor to verify sensor readings and connectivity.
+   - Use the serial monitor to verify sensor readings, camera status, and connectivity.
 3. **Ground Testing:**
    - Test the parachute mechanism by simulating an altitude drop.
-   - Check the web dashboard for real-time telemetry.
+   - Activate timelapse mode using the web interface and check for image capture.
+   - Verify the live telemetry on the web dashboard.
 4. **Final Assembly:**
    - Once diagnostics are complete, assemble all parts into the final rocket configuration.
    - Secure the rocket components for safe transport and launch.
 
 ## Troubleshooting
 
-- **Sensor Errors:**  
-  - Check wiring connections if sensors do not initialize.
-  - Verify the I2C addresses using a scanner tool.
-- **WiFi Connectivity:**  
-  - Ensure that network credentials are correct.
-  - Verify that the ESP32 is within range of the WiFi network.
-- **Servo Malfunction:**  
-  - Test the servo separately to ensure proper operation.
-  - Check power supply and signal integrity.
+- **Sensor or Camera Issues:**  
+  - Check wiring connections and verify sensor addresses.
+  - Test the camera module separately to ensure proper operation.
+- **WiFi/OTA Connectivity Problems:**  
+  - Confirm that network credentials are correct and the ESP32 is within range.
 - **SD Card Logging Issues:**  
-  - Confirm that the SD card is properly formatted.
-  - Verify pin connections as per the SD_MMC interface definitions.
+  - Ensure the SD card is properly formatted and connected.
+- **Servo or Timelapse Malfunctions:**  
+  - Test the servo and verify power supply.
+  - Review debug outputs via serial monitoring for further clues.
 
 ## Additional Resources
 
