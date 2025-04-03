@@ -147,8 +147,56 @@
             <td>Timelapse Status</td>
             <td id='TimelapseStatus'>-</td>
         </tr>
+        <tr>
+            <td>logBMP280Data</td>
+            <td id='logBMP280Data'>-</td>
+        </tr>
+        <tr>
+            <td>logMPU6050Data</td>
+            <td id='logMPU6050Data'>-</td>
+        </tr>
+        <tr>
+            <td>logSpaceUsage</td>
+            <td id='logSpaceUsage'>-</td>
+        </tr>
+        <tr>
+            <td>showCameraOutput</td>
+            <td id='showCameraOutput'>-</td>
+        </tr>
+        <tr>
+            <td>showTimelapseOutput</td>
+            <td id='showTimelapseOutput'>-</td>
+        </tr>
+        <tr>
+            <td>showSensorInitLog</td>
+            <td id='showSensorInitLog'>-</td>
+        </tr>
+        <tr>
+            <td>timelapseInterval (ms)</td>
+            <td id='timelapseInterval'>-</td>
+        </tr>
+        <tr>
+            <td>SD_LOG_INTERVAL (ms)</td>
+            <td id='SD_LOG_INTERVAL'>-</td>
+        </tr>
+        <tr>
+            <td>WEB_UPDATE_INTERVAL (ms)</td>
+            <td id='WEB_UPDATE_INTERVAL'>-</td>
+        </tr>
+        <tr>
+            <td>enableOTA</td>
+            <td id='enableOTA'>-</td>
+        </tr>
+        <tr>
+            <td>altitudeDropThreshold (m)</td>
+            <td id='altitudeDropThreshold'>-</td>
+        </tr>
+        <tr>
+            <td>Loop Execution Time (ms)</td>
+            <td id='loopExecutionTime'>-</td>
+        </tr>
     </table>
-    <div class='button-container'> <button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button> <button type='button' id='BTN_STOP_TIMELAPSE'>Stop Picture Timelapse</button> </div>
+    <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button><button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button><button type='button' id='BTN_STOP_TIMELAPSE'>Stop Picture Timelapse</button></div>
     <script>
         var Socket;
         document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
@@ -204,6 +252,18 @@
             document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';
             document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';
             document.getElementById('TimelapseStatus').innerHTML = obj.TimelapseStatus || '-';
+            document.getElementById('logBMP280Data').innerHTML = obj.logBMP280Data || '-';
+            document.getElementById('logMPU6050Data').innerHTML = obj.logMPU6050Data || '-';
+            document.getElementById('logSpaceUsage').innerHTML = obj.logSpaceUsage || '-';
+            document.getElementById('showCameraOutput').innerHTML = obj.showCameraOutput || '-';
+            document.getElementById('showTimelapseOutput').innerHTML = obj.showTimelapseOutput || '-';
+            document.getElementById('showSensorInitLog').innerHTML = obj.showSensorInitLog || '-';
+            document.getElementById('timelapseInterval').innerHTML = obj.timelapseInterval || '-';
+            document.getElementById('SD_LOG_INTERVAL').innerHTML = obj.SD_LOG_INTERVAL || '-';
+            document.getElementById('WEB_UPDATE_INTERVAL').innerHTML = obj.WEB_UPDATE_INTERVAL || '-';
+            document.getElementById('enableOTA').innerHTML = obj.enableOTA || '-';
+            document.getElementById('altitudeDropThreshold').innerHTML = obj.altitudeDropThreshold || '-';
+            document.getElementById('loopExecutionTime').innerHTML = obj.loopExecutionTime || '-';
         }
         window.onload = function(event) {
             init();

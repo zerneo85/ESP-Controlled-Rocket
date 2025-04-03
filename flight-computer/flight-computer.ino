@@ -1,14 +1,23 @@
 /*
- * Flight Computer Firmware for ESP32
+ * Flight Computer Firmware for ESP32 (Optimized & Fully Commented)
  *
- * Features:
- * - Reads sensor data from BMP280 (altitude, temperature, pressure) and MPU6050 (accelerometer, gyroscope)
- * - Logs data to an SD card; the log file is rotated only once during boot after a successful NTP update.
- * - Provides OTA updates and a web server with WebSocket broadcasting for real-time monitoring.
- * - Retrieves local sea-level pressure from the OpenWeatherMap API once per connection event,
- *   with fallback to EEPROM or a default value.
- * - Uses the NTP time (updated only once at boot) for all timestamps.
- * - Each sensor log line now includes the current SD card TotalSpace and UsedSpace values.
+ * Key changes in this version:
+ * 1. When the parachute is armed, the code resets:
+ *    - Relative altitude metrics (maxRelativeAltitude, minRelativeAltitude)
+ *    - Altitude drop metrics (maxAltitudeDrop, minAltitudeDrop)
+ *    - lastAltitude (so that future measurements start from zero)
+ *
+ * 2. The following configuration variables are now broadcasted, logged, and shown on the web page:
+ *    - logBMP280Data, logMPU6050Data, logSpaceUsage, showCameraOutput, showTimelapseOutput,
+ *      showSensorInitLog, timelapseInterval, SD_LOG_INTERVAL, WEB_UPDATE_INTERVAL, enableOTA,
+ *      altitudeDropThreshold, and the loop execution time (time used per loop).
+ *
+ * 3. The HTML page has been updated to include rows for these configuration values.
+ *
+ * 4. The API call for pressure is executed once after a successful WiFi connection in setup,
+ *    and once each time the parachute is armed.
+ *
+ * 5. OTA update webserver can be enabled or disabled via the "enableOTA" flag.
  */
 
 // -----------------------
@@ -28,84 +37,78 @@
 // Override Camera SCCB Pins Before Including camera_pins.h
 // -----------------------
 #define CAMERA_MODEL_ESP32S3_EYE
-#include "camera_pins.h"          // Now uses our overridden camera pins
+#include "camera_pins.h"          // Uses our overridden camera pins
 
 // -----------------------
 // Library Inclusions for Sensors, SD, WiFi, OTA, etc.
 // -----------------------
-#define sensor_t adafruit_sensor_t  // Rename sensor_t to avoid conflicts with camera driver
+// Rename sensor_t to avoid conflicts with camera driver
+#define sensor_t adafruit_sensor_t  
 #include <Adafruit_MPU6050.h>       // MPU6050 sensor library
 #include <Adafruit_BMP280.h>        // BMP280 sensor library
 #undef sensor_t
 
-#include <Wire.h>                  // I²C communication library
-#include <Adafruit_Sensor.h>       // Unified sensor library
-#include <SD_MMC.h>                // SD card interface for ESP32-S3
-#include "sd_read_write.h"         // Helper functions for SD card operations
-#include <ESP32Servo.h>            // Servo control library for ESP32
-#include <WiFi.h>                  // WiFi connectivity
-#include <WiFiUdp.h>               // UDP library (for NTP)
-#include <NTPClient.h>             // NTP client library
-#include <WebServer.h>             // Web server library
-#include <WebSocketsServer.h>      // WebSockets for real-time data transmission
-#include <ArduinoJson.h>           // JSON library for building JSON objects
-#include <HTTPClient.h>            // HTTP client library for API calls
-#include <Arduino_ESP32_OTA.h>     // OTA update library for ESP32 (HTTP OTA)
-#include <HTTPUpdateServer.h>      // HTTP update server library
-#include <ESPmDNS.h>               // mDNS for network service discovery
-#include <EEPROM.h>                // EEPROM library for non-volatile storage
+#include <Wire.h>                   // I²C communication library
+#include <Adafruit_Sensor.h>        // Unified sensor library
+#include <SD_MMC.h>                 // SD card interface for ESP32-S3
+#include "sd_read_write.h"          // Helper functions for SD card operations
+#include <ESP32Servo.h>             // Servo control library for ESP32
+#include <WiFi.h>                   // WiFi connectivity
+#include <WiFiUdp.h>                // UDP library (for NTP)
+#include <NTPClient.h>              // NTP client library
+#include <WebServer.h>              // Web server library
+#include <WebSocketsServer.h>       // WebSockets for real-time data transmission
+#include <ArduinoJson.h>            // JSON library for building JSON objects
+#include <HTTPClient.h>             // HTTP client library for API calls
+#include <Arduino_ESP32_OTA.h>      // OTA update library for ESP32 (HTTP OTA)
+#include <HTTPUpdateServer.h>       // HTTP update server library
+#include <ESPmDNS.h>                // mDNS for network service discovery
+#include <EEPROM.h>                 // EEPROM library for non-volatile storage
 
 // -----------------------
 // Macro Definitions
 // -----------------------
-#define EEPROM_SIZE 10
-#define EEPROM_PRESSURE_ADDR 0
+#define EEPROM_SIZE 10                    // EEPROM storage size in bytes
+#define EEPROM_PRESSURE_ADDR 0            // EEPROM address for pressure storage
 
 // -----------------------
 // Global Control Variables for Logging and Output
 // -----------------------
+bool enableSensorSerialLog = true;        // Master toggle for serial sensor log output
 
-// Master toggle for sensor serial log output
-bool enableSensorSerialLog = true;  
-
-// Toggle logging for specific sensor groups:
-bool logBMP280Data        = false;    // BMP280 sensor (temperature, pressure, altitude)
-bool logMPU6050Data       = false;    // MPU6050 sensor (accelerometer, gyroscope, temperature)
-bool logSpaceUsage        = true;     // SD card space usage logs
-
-// Toggle logging for camera output (initialization and capture events)
-bool showCameraOutput     = true;    
-
-// Toggle logging for timelapse events (start/stop and capture events)
-bool showTimelapseOutput  = true;    
-
-// Toggle logging for sensor initialization (detecting sensors during setup)
-bool showSensorInitLog    = true;  
+// Toggle flags for various logs and outputs:
+bool logBMP280Data        = false;         // If true, BMP280 sensor readings (temp, pressure, altitude) are logged to serial.
+bool logMPU6050Data       = false;         // If true, MPU6050 sensor readings (accelerometer, gyro, temp) are logged.
+bool logSpaceUsage        = true;          // If true, SD card space usage is printed to serial.
+bool showCameraOutput     = true;          // If true, camera initialization and capture events are logged.
+bool showTimelapseOutput  = true;          // If true, timelapse image capture events are logged.
+bool showSensorInitLog    = true;          // If true, sensor initialization messages are logged.
 
 // -----------------------
-// Global Variables for System State and Measurements
+// Timelapse and Task Interval Settings
 // -----------------------
-bool cameraEnabled = true;         // Flag to control whether the camera is enabled
+bool timelapseActive = false;             // Flag indicating if timelapse capture is active.
+const unsigned long timelapseInterval = 500; // Interval (ms) between timelapse image captures.
 
-uint64_t totalSpace;               // Total SD card space (MB)
-uint64_t usedSpace;                // Used SD card space (MB)
+// Configurable intervals for lower priority tasks:
+const unsigned long SD_LOG_INTERVAL       = 1000;  // Interval (ms) for logging data to SD card.
+const unsigned long WEB_UPDATE_INTERVAL     = 200;   // Interval (ms) for updating web clients (WebSocket).
 
-String PressureSource = "";        // String to indicate where pressure data came from
-float lastLocalPressure = 1026.0;  // Default/fallback sea-level pressure (hPa)
+// -----------------------
+// OTA Webserver Control
+// -----------------------
+bool enableOTA = false;  // Set to true to run the OTA update webserver; false to disable.
 
-bool apiPressureUpdated = false;   // Flag to indicate if API pressure update has occurred
+// -----------------------
+// Other Global Flags
+// -----------------------
+bool cameraEnabled = true;              // Controls whether the camera is used
 
-// Variables for altitude tracking
-float maxAbsoluteAltitude = -1000000.0;
-float minAbsoluteAltitude = 1000000.0;
-float maxRelativeAltitude = -1000000.0;
-float minRelativeAltitude = 1000000.0;
-float maxAltitudeDrop = -1000000.0;
-float minAltitudeDrop = 1000000.0;
-
-bool timelapseActive = false;      // Flag to control if timelapse capturing is active
-unsigned long lastTimelapseCapture = 0;
-const unsigned long timelapseInterval = 500; // Timelapse capture interval in milliseconds
+// -----------------------
+// Global Variables for SD Card Space
+// -----------------------
+uint64_t totalSpace = 0;                // Total SD card space in MB.
+uint64_t usedSpace = 0;                 // Used SD card space in MB.
 
 // -----------------------
 // WiFi and Access Point Credentials
@@ -118,47 +121,67 @@ const char* apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Details
 // -----------------------
-const char* openWeatherMapApiKey = "API_KEY";
-const char* lat = "LATITUDE";
-const char* lon = "LONGITUDE";
+const char* openWeatherMapApiKey = "API_KEY";  // Replace with your actual API key.
+const char* lat = "latitude";                  // Replace with your latitude.
+const char* lon = "longitude";                   // Replace with your longitude.
 const char* owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 // -----------------------
 // NTP Client Setup
 // -----------------------
-#define UTC_OFFSET_IN_SECONDS 3600
+#define UTC_OFFSET_IN_SECONDS 3600            // UTC offset (in seconds) for your timezone.
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", UTC_OFFSET_IN_SECONDS);
 unsigned long lastSuccessfulNTP = 0;
 unsigned long lastSyncMillis = 0;
 
 // -----------------------
-// Parachute and Altitude Calculations
+// Parachute and Altitude Variables
 // -----------------------
-const float altitudeDropThreshold = 0.8;
-float lastAltitude = 0;
-String parachuteStatus = "unarmed";
-float baselineAltitude = 0;
-bool baselineCaptured = false;
-const float defaultSeaLevelPressure = 1026.0;
+const float altitudeDropThreshold = 0.8;      // Altitude drop threshold (in meters) for triggering parachute release.
+float lastAltitude = 0;                       // Last measured relative altitude.
+String parachuteStatus = "unarmed";           // Parachute status: "unarmed", "armed", or "released".
+float baselineAltitude = 0;                   // Baseline altitude captured upon arming.
+bool baselineCaptured = false;                // Flag indicating if baseline altitude has been captured.
+const float defaultSeaLevelPressure = 1026.0; // Default sea-level pressure (hPa).
+
+// -----------------------
+// Global Variables for Pressure and Altitude Tracking
+// -----------------------
+String PressureSource = "";           // Indicates where pressure data came from.
+float lastLocalPressure = 1026.0;       // Default sea-level pressure (hPa).
+bool apiPressureUpdated = false;      // Flag if pressure API call succeeded.
+
+// -----------------------
+// Global Variables for Altitude Tracking
+// -----------------------
+float maxAbsoluteAltitude = -1000000.0;
+float minAbsoluteAltitude =  1000000.0;
+float maxRelativeAltitude = -1000000.0;
+float minRelativeAltitude =  1000000.0;
+float maxAltitudeDrop = -1000000.0;
+float minAltitudeDrop =  1000000.0;
 
 // -----------------------
 // Sensor Availability Flags
 // -----------------------
-bool bmpFound = false;
-bool mpuFound = false;
+bool bmpFound = false;                        // True if BMP280 sensor is found.
+bool mpuFound = false;                        // True if MPU6050 sensor is found.
 
 // -----------------------
-// Web Server and WebSocket HTML Content
+// Web Server HTML Content
 // -----------------------
-String webpage = "<!DOCTYPE html><html><head> <meta name='viewport' content='width=device-width,initial-scale=1'> <title>Flight Computer</title> <style> body { background-color: #EEEEEE; font-family: Arial, sans-serif; color: #003366; margin: 0; padding: 20px; } h1 { text-align: center; margin-bottom: 20px; } .data-table { margin: 0 auto; border-collapse: collapse; width: 90%; max-width: 600px; background-color: #FFF; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); } .data-table th, .data-table td { padding: 12px 15px; border: 1px solid #CCC; text-align: left; } .data-table th { background-color: #003366; color: #FFF; } .data-table tr:nth-child(even) { background-color: #F9F9F9; } .button-container { text-align: center; margin-top: 20px; } button { background-color: #003366; color: #FFF; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 5px; } button:hover { background-color: #0055AA; } </style></head><body> <h1>Flight Information</h1> <table class='data-table'> <tr> <th>Parameter</th> <th>Value</th> </tr> <tr> <td>Absolute Altitude</td> <td id='AbsoluteAltitude'>-</td> </tr> <tr> <td>Relative Altitude</td> <td id='RelativeAltitude'>-</td> </tr> <tr> <td>Altitude Drop</td> <td id='AltitudeDrop'>-</td> </tr> <tr> <td>BMP280 Temp</td> <td id='BMP280Temp'>-</td> </tr> <tr> <td>BMP280 Pressure</td> <td id='BMP280Pressure'>-</td> </tr> <tr> <td>MPU6050 Temp</td> <td id='MPU6050Temp'>-</td> </tr> <tr> <td>Accelerometer</td> <td id='Accelerometer'>-</td> </tr> <tr> <td>Gyroscope</td> <td id='Gyroscope'>-</td> </tr> <tr> <td>Parachute Status</td> <td id='ParachuteStatus'>-</td> </tr> <tr> <td>Local Pressure</td> <td id='LocalPressure'>-</td> </tr> <tr> <td>Default Sea-Level Pressure</td> <td id='DefaultSeaLevelPressure'>-</td> </tr> <tr> <td>Pressure Source</td> <td id='PressureSource'>-</td> </tr> <tr> <td>Max Abs Altitude</td> <td id='MaxAbsAltitude'>-</td> </tr> <tr> <td>Min Abs Altitude</td> <td id='MinAbsAltitude'>-</td> </tr> <tr> <td>Max Rel Altitude</td> <td id='MaxRelAltitude'>-</td> </tr> <tr> <td>Min Rel Altitude</td> <td id='MinRelAltitude'>-</td> </tr> <tr> <td>Total Space (MB)</td> <td id='TotalSpace'>-</td> </tr> <tr> <td>Used Space (MB)</td> <td id='UsedSpace'>-</td> </tr> <tr> <td>Timelapse Status</td> <td id='TimelapseStatus'>-</td> </tr> </table> <div class='button-container'> <button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button> <button type='button' id='BTN_STOP_TIMELAPSE'>Stop Picture Timelapse</button> </div> <script> var Socket; document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back); document.getElementById('BTN_START_TIMELAPSE').addEventListener('click', button_start_timelapse); document.getElementById('BTN_STOP_TIMELAPSE').addEventListener('click', button_stop_timelapse); function init() { Socket = new WebSocket('ws://' + window.location.hostname + ':81/'); Socket.onmessage = function(event) { processCommand(event); }; } function button_send_back() { var msg = { parachute: 'Armed' }; Socket.send(JSON.stringify(msg)); } function button_start_timelapse() { var msg = { timelapse: 'start' }; Socket.send(JSON.stringify(msg)); } function button_stop_timelapse() { var msg = { timelapse: 'stop' }; Socket.send(JSON.stringify(msg)); } function processCommand(event) { var obj = JSON.parse(event.data); document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-'; document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-'; document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-'; document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-'; document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-'; document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-'; document.getElementById('Accelerometer').innerHTML = obj.Accelerometer || '-'; document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-'; document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-'; document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-'; document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-'; document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-'; document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-'; document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-'; document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-'; document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-'; document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-'; document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-'; document.getElementById('TimelapseStatus').innerHTML = obj.TimelapseStatus || '-'; } window.onload = function(event) { init(); } </script></body></html>";
+// The HTML page displays flight data and control buttons in two tables:
+// Left table: Sensor Data (including Max/Min Altitude Drop)
+// Right table: System Status / Configuration values.
+String webpage ="<!DOCTYPE html><html><head> <meta name='viewport' content='width=device-width,initial-scale=1'> <title>Flight Computer</title> <style> body { background-color: #EEEEEE; font-family: Arial, sans-serif; color: #003366; margin: 0; padding: 20px; } h1 { text-align: center; margin-bottom: 20px; } .data-table { margin: 0 auto; border-collapse: collapse; width: 90%; max-width: 600px; background-color: #FFF; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); } .data-table th, .data-table td { padding: 12px 15px; border: 1px solid #CCC; text-align: left; } .data-table th { background-color: #003366; color: #FFF; } .data-table tr:nth-child(even) { background-color: #F9F9F9; } .button-container { text-align: center; margin-top: 20px; } button { background-color: #003366; color: #FFF; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 5px; } button:hover { background-color: #0055AA; } </style></head><body> <h1>Flight Information</h1> <table class='data-table'> <tr> <th>Parameter</th> <th>Value</th> </tr> <tr> <td>Absolute Altitude</td> <td id='AbsoluteAltitude'>-</td> </tr> <tr> <td>Relative Altitude</td> <td id='RelativeAltitude'>-</td> </tr> <tr> <td>Altitude Drop</td> <td id='AltitudeDrop'>-</td> </tr> <tr> <td>BMP280 Temp</td> <td id='BMP280Temp'>-</td> </tr> <tr> <td>BMP280 Pressure</td> <td id='BMP280Pressure'>-</td> </tr> <tr> <td>MPU6050 Temp</td> <td id='MPU6050Temp'>-</td> </tr> <tr> <td>Accelerometer</td> <td id='Accelerometer'>-</td> </tr> <tr> <td>Gyroscope</td> <td id='Gyroscope'>-</td> </tr> <tr> <td>Parachute Status</td> <td id='ParachuteStatus'>-</td> </tr> <tr> <td>Local Pressure</td> <td id='LocalPressure'>-</td> </tr> <tr> <td>Default Sea-Level Pressure</td> <td id='DefaultSeaLevelPressure'>-</td> </tr> <tr> <td>Pressure Source</td> <td id='PressureSource'>-</td> </tr> <tr> <td>Max Abs Altitude</td> <td id='MaxAbsAltitude'>-</td> </tr> <tr> <td>Min Abs Altitude</td> <td id='MinAbsAltitude'>-</td> </tr> <tr> <td>Max Rel Altitude</td> <td id='MaxRelAltitude'>-</td> </tr> <tr> <td>Min Rel Altitude</td> <td id='MinRelAltitude'>-</td> </tr> <tr> <td>Total Space (MB)</td> <td id='TotalSpace'>-</td> </tr> <tr> <td>Used Space (MB)</td> <td id='UsedSpace'>-</td> </tr> <tr> <td>Timelapse Status</td> <td id='TimelapseStatus'>-</td> </tr> <tr> <td>logBMP280Data</td> <td id='logBMP280Data'>-</td> </tr> <tr> <td>logMPU6050Data</td> <td id='logMPU6050Data'>-</td> </tr> <tr> <td>logSpaceUsage</td> <td id='logSpaceUsage'>-</td> </tr> <tr> <td>showCameraOutput</td> <td id='showCameraOutput'>-</td> </tr> <tr> <td>showTimelapseOutput</td> <td id='showTimelapseOutput'>-</td> </tr> <tr> <td>showSensorInitLog</td> <td id='showSensorInitLog'>-</td> </tr> <tr> <td>timelapseInterval (ms)</td> <td id='timelapseInterval'>-</td> </tr> <tr> <td>SD_LOG_INTERVAL (ms)</td> <td id='SD_LOG_INTERVAL'>-</td> </tr> <tr> <td>WEB_UPDATE_INTERVAL (ms)</td> <td id='WEB_UPDATE_INTERVAL'>-</td> </tr> <tr> <td>enableOTA</td> <td id='enableOTA'>-</td> </tr> <tr> <td>altitudeDropThreshold (m)</td> <td id='altitudeDropThreshold'>-</td> </tr> <tr> <td>Loop Execution Time (ms)</td> <td id='loopExecutionTime'>-</td> </tr> </table> <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button><button type='button' id='BTN_START_TIMELAPSE'>Start Picture Timelapse</button><button type='button' id='BTN_STOP_TIMELAPSE'>Stop Picture Timelapse</button></div> <script> var Socket; document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back); document.getElementById('BTN_START_TIMELAPSE').addEventListener('click', button_start_timelapse); document.getElementById('BTN_STOP_TIMELAPSE').addEventListener('click', button_stop_timelapse); function init() { Socket = new WebSocket('ws://' + window.location.hostname + ':81/'); Socket.onmessage = function(event) { processCommand(event); }; } function button_send_back() { var msg = { parachute: 'Armed' }; Socket.send(JSON.stringify(msg)); } function button_start_timelapse() { var msg = { timelapse: 'start' }; Socket.send(JSON.stringify(msg)); } function button_stop_timelapse() { var msg = { timelapse: 'stop' }; Socket.send(JSON.stringify(msg)); } function processCommand(event) { var obj = JSON.parse(event.data); document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-'; document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-'; document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-'; document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-'; document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-'; document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-'; document.getElementById('Accelerometer').innerHTML = obj.Accelerometer || '-'; document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-'; document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-'; document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-'; document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-'; document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-'; document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-'; document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-'; document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-'; document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-'; document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-'; document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-'; document.getElementById('TimelapseStatus').innerHTML = obj.TimelapseStatus || '-'; document.getElementById('logBMP280Data').innerHTML = obj.logBMP280Data || '-'; document.getElementById('logMPU6050Data').innerHTML = obj.logMPU6050Data || '-'; document.getElementById('logSpaceUsage').innerHTML = obj.logSpaceUsage || '-'; document.getElementById('showCameraOutput').innerHTML = obj.showCameraOutput || '-'; document.getElementById('showTimelapseOutput').innerHTML = obj.showTimelapseOutput || '-'; document.getElementById('showSensorInitLog').innerHTML = obj.showSensorInitLog || '-'; document.getElementById('timelapseInterval').innerHTML = obj.timelapseInterval || '-'; document.getElementById('SD_LOG_INTERVAL').innerHTML = obj.SD_LOG_INTERVAL || '-'; document.getElementById('WEB_UPDATE_INTERVAL').innerHTML = obj.WEB_UPDATE_INTERVAL || '-'; document.getElementById('enableOTA').innerHTML = obj.enableOTA || '-'; document.getElementById('altitudeDropThreshold').innerHTML = obj.altitudeDropThreshold || '-'; document.getElementById('loopExecutionTime').innerHTML = obj.loopExecutionTime || '-'; } window.onload = function(event) { init(); } </script></body></html>";
 
 // -----------------------
 // Web Server and WebSocket Instances
 // -----------------------
-WebServer server(80);
-WebSocketsServer webSocket = WebSocketsServer(81);
-HTTPUpdateServer httpUpdater;  // For OTA updates
+WebServer server(80);                   // HTTP server on port 80
+WebSocketsServer webSocket = WebSocketsServer(81); // WebSocket server on port 81
+HTTPUpdateServer httpUpdater;           // OTA update server instance
 
 // -----------------------
 // SD_MMC and I2C Pin Definitions for SD and Sensors
@@ -177,11 +200,12 @@ Adafruit_MPU6050 mpu;  // MPU6050 sensor instance
 // Servo Configuration for Parachute Deployment
 // -----------------------
 Servo parachuteservo;
-int servoPin = 14;
+int servoPin = 14;     // Pin connected to the parachute servo
 
 // -----------------------
-// Function to Get a Timestamp String Using NTP Time
+// Function: getTimeStampString()
 // -----------------------
+// Returns a formatted timestamp string using NTP time (if available) or from the NTP client.
 String getTimeStampString() {
   if (lastSuccessfulNTP != 0) {
     unsigned long currentEpoch = lastSuccessfulNTP + ((millis() - lastSyncMillis) / 1000);
@@ -201,20 +225,22 @@ String getTimeStampString() {
 }
 
 // -----------------------
-// Function to Get Local Sea-Level Pressure
+// Function: getLocalSeaLevelPressure()
 // -----------------------
+// Returns the locally stored sea-level pressure.
 float getLocalSeaLevelPressure() {
   return lastLocalPressure;
 }
 
 // -----------------------
-// Function to Update Pressure Data from the OpenWeatherMap API
+// Function: updatePressureFromAPI()
 // -----------------------
+// Calls the OpenWeatherMap API to update the local pressure.
+// If the API call fails, it falls back to EEPROM or a default pressure.
 void updatePressureFromAPI() {
   float localPressure = defaultSeaLevelPressure;
   HTTPClient http;
-  String url = String(owmEndpoint) + "?lat=" + lat + "&lon=" + lon +
-               "&exclude=minutely,hourly,daily,alerts&appid=" + openWeatherMapApiKey;
+  String url = String(owmEndpoint) + "?lat=" + lat + "&lon=" + lon + "&exclude=minutely,hourly,daily,alerts&appid=" + openWeatherMapApiKey;
   http.begin(url);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -244,6 +270,7 @@ void updatePressureFromAPI() {
   }
   http.end();
 
+  // Fallback to EEPROM if API call fails
   if (PressureSource == "API Error" || PressureSource == "HTTP Error") {
     float storedPressure;
     EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
@@ -262,40 +289,49 @@ void updatePressureFromAPI() {
 }
 
 // -----------------------
-// Function to Rotate Log Files (Not used since rotation is handled at setup)
+// Function: rotateLogFile()
 // -----------------------
+// Log rotation is handled during setup.
 void rotateLogFile() {
-  // Log rotation is handled in the setup() function.
+  // Handled in setup()
 }
 
 // -----------------------
-// Function to Release the Parachute
+// Function: parachuteRelease()
 // -----------------------
+// Immediately releases the parachute by actuating the servo without delays.
+// This is a high-priority action.
 void parachuteRelease() {
   Serial.println("Altitude drop detected! Releasing parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.txt", eventLog);
-  for (int i = 0; i < 2; i++) {
-    parachuteservo.write(180);
-    delay(200);
-    parachuteservo.write(0);
-  }
+  // Actuate servo instantly.
+  parachuteservo.write(180);
+  delay(50);
+  parachuteservo.write(0);
   parachuteStatus = "released";
 }
 
 // -----------------------
-// Function to Arm the Parachute
+// Function: parachuteArmed()
 // -----------------------
+// Arms the parachute. It logs the event, updates pressure (if WiFi is connected),
+// captures the baseline altitude, and resets altitude metrics (including max/min altitude drop).
 void parachuteArmed() {
   Serial.println("Arming parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.txt", eventLog);
+
+  // Update pressure upon arming if WiFi is connected.
+  if (WiFi.status() == WL_CONNECTED) {
+    updatePressureFromAPI();
+  }
   
-  // Capture baseline altitude if not already done
+  // Capture baseline altitude (if available)
   if (!baselineCaptured) {
     if (bmpFound) {
       bmp.setSampling(Adafruit_BMP280::MODE_NORMAL, Adafruit_BMP280::SAMPLING_X2,
@@ -311,16 +347,25 @@ void parachuteArmed() {
     Serial.println(" m");
   }
   
-  // Move servo to arm the parachute
-  parachuteservo.write(0);
-  delay(200);
-  parachuteservo.write(180);
+  // Reset relative altitude and altitude drop metrics.
+  maxRelativeAltitude = 0;
+  minRelativeAltitude = 0;
+  maxAltitudeDrop = 0;
+  minAltitudeDrop = 0;
+  lastAltitude = 0;
+  
+  // Actuate servo to arm position without delays.
   parachuteStatus = "armed";
+  parachuteservo.write(0);
+  delay(50);
+  parachuteservo.write(180);
+  
 }
 
 // -----------------------
-// WebSocket Event Handler
+// Function: webSocketEvent()
 // -----------------------
+// Handles incoming WebSocket events and commands.
 void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
@@ -337,7 +382,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
         Serial.println(error.f_str());
         return;
       }
-      // Handle parachute command
+      // Process parachute command.
       if (doc.containsKey("parachute")) {
         const char* g_parachute = doc["parachute"];
         Serial.println("Received parachute command from client " + String(num));
@@ -349,7 +394,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
           }
         }
       }
-      // Handle timelapse command
+      // Process timelapse command.
       if (doc.containsKey("timelapse")) {
         String tlCommand = doc["timelapse"];
         if (tlCommand == "start") {
@@ -371,8 +416,9 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 }
 
 // -----------------------
-// Camera Setup Function
+// Function: cameraSetup()
 // -----------------------
+// Configures and initializes the camera. Adjusts settings based on PSRAM availability.
 int cameraSetup(void) {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -395,24 +441,21 @@ int cameraSetup(void) {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.frame_size = FRAMESIZE_UXGA;
-  config.pixel_format = PIXFORMAT_JPEG; // JPEG for streaming
+  config.pixel_format = PIXFORMAT_JPEG; // JPEG for streaming.
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.jpeg_quality = 12;
   config.fb_count = 1;
   
-  // Use PSRAM if available for higher resolution
   if (psramFound()) {
     config.jpeg_quality = 10;
     config.fb_count = 2;
     config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
-    // Limit the frame size if PSRAM is not available
     config.frame_size = FRAMESIZE_SVGA;
     config.fb_location = CAMERA_FB_IN_DRAM;
   }
 
-  // Initialize the camera
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     if (showCameraOutput) {
@@ -422,10 +465,9 @@ int cameraSetup(void) {
   }
 
   sensor_t *s = esp_camera_sensor_get();
-  // Adjust sensor settings: flip image, adjust brightness and saturation
-  s->set_vflip(s, 1);       // Flip the image vertically
-  s->set_brightness(s, 1);  // Increase brightness slightly
-  s->set_saturation(s, 0);  // Lower saturation
+  s->set_vflip(s, 1);       // Flip image vertically.
+  s->set_brightness(s, 1);  // Slightly increase brightness.
+  s->set_saturation(s, 0);  // Lower saturation.
 
   if (showCameraOutput) {
     Serial.println("Camera configuration complete!");
@@ -434,9 +476,9 @@ int cameraSetup(void) {
 }
 
 // -----------------------
-// Function to Capture and Save a Picture from the Camera
+// Function: captureAndSavePicture()
 // -----------------------
-// Updated to use readFileNum and writejpg for correct file naming.
+// Captures a picture with the camera and saves it to the SD card with a unique filename.
 String captureAndSavePicture() {
   if (!cameraEnabled) {
     if (showCameraOutput) {
@@ -453,11 +495,9 @@ String captureAndSavePicture() {
     return "";
   }
   
-  // Use the helper function readFileNum to get the next available photo index
   int photo_index = readFileNum(SD_MMC, "/camera");
   if (photo_index != -1) {
     String path = "/camera/" + String(photo_index) + ".jpg";
-    // Save the image using writejpg (assumed defined in sd_read_write.h)
     writejpg(SD_MMC, path.c_str(), fb->buf, fb->len);
     if (showCameraOutput) {
       Serial.print("Picture saved: ");
@@ -475,13 +515,15 @@ String captureAndSavePicture() {
 }
 
 // -----------------------
-// Setup Function: Runs Once on Boot
+// Function: setup()
 // -----------------------
+// Runs once at boot. Initializes WiFi, NTP, SD card, sensors, OTA (if enabled), and camera.
+// Also rotates logs and sets up web server routes.
 void setup() {
   Serial.begin(115200);
   Serial.println(F("Starting setup..."));
 
-  // Initialize EEPROM for storing pressure data
+  // Initialize EEPROM for pressure data storage.
   EEPROM.begin(EEPROM_SIZE);
   float storedPressure;
   EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
@@ -493,7 +535,7 @@ void setup() {
     PressureSource = "Default Sea-Level Pressure";
   }
 
-  // Initialize WiFi: try to connect as a station first
+  // Initialize WiFi as a station.
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, wifiPassword);
   Serial.print("Connecting to WiFi");
@@ -507,6 +549,7 @@ void setup() {
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
   } else {
+    // If connection fails, start as an Access Point.
     Serial.println("\nWiFi connection failed. Starting Access Point...");
     WiFi.mode(WIFI_AP);
     WiFi.softAP(apSSID, apPassword);
@@ -514,12 +557,12 @@ void setup() {
     Serial.println(WiFi.softAPIP());
   }
   
-  // Update pressure from API if WiFi is connected
+  // Call the pressure API once after a successful WiFi connection.
   if (WiFi.status() == WL_CONNECTED) {
     updatePressureFromAPI();
   }
   
-  // Initialize and update NTP client for timestamps
+  // Initialize NTP client for time synchronization.
   timeClient.begin();
   timeClient.update();
   unsigned long currentEpoch = timeClient.getEpochTime();
@@ -532,7 +575,7 @@ void setup() {
     Serial.println("Failed to get NTP time.");
   }
   
-  // Initialize SD Card and prepare logging
+  // Initialize SD card and perform log rotation.
   Serial.print("Initializing SD card...");
   SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0);
   if (!SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5)) {
@@ -542,7 +585,6 @@ void setup() {
     createDir(SD_MMC, "/camera");
     listDir(SD_MMC, "/camera", 0);
 
-    // Rename previous log file if exists
     String oldLogFile = "/log.txt";
     String timestamp = getTimeStampString();
     timestamp.replace(":", "");
@@ -554,9 +596,9 @@ void setup() {
     }
     if (SD_MMC.exists(oldLogFile.c_str())) {
       if (SD_MMC.rename(oldLogFile.c_str(), newLogFile.c_str())) {
-        Serial.println("Previous log file renamed successfully to " + newLogFile);
+        Serial.println("Previous log file renamed to " + newLogFile);
       } else {
-        Serial.println("Failed to rename log file " + oldLogFile + " to " + newLogFile);
+        Serial.println("Failed to rename log file " + oldLogFile);
       }
     } else {
       Serial.println("No previous log file found.");
@@ -569,16 +611,16 @@ void setup() {
     }
   }
   
-  // Calculate SD card space in MB
+  // Calculate SD card space usage.
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
   Serial.printf("Total space: %lluMB\n", totalSpace);
   Serial.printf("Used space: %lluMB\n", usedSpace);
   
-  // Initialize I2C bus for sensors (I2C_NUM_1) on pins 42 and 37
+  // Initialize I2C bus for sensors.
   Wire.begin(42, 37);
   
-  // Initialize MPU6050 sensor
+  // Initialize MPU6050 sensor.
   if (mpu.begin(0x68)) {
     mpuFound = true;
     if (showSensorInitLog) {
@@ -587,11 +629,11 @@ void setup() {
   } else {
     mpuFound = false;
     if (showSensorInitLog) {
-      Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
+      Serial.println("Could not find MPU6050 sensor. Check wiring!");
     }
   }
   
-  // Initialize BMP280 sensor
+  // Initialize BMP280 sensor.
   if (bmp.begin(0x76)) {
     bmpFound = true;
     if (showSensorInitLog) {
@@ -600,26 +642,28 @@ void setup() {
   } else {
     bmpFound = false;
     if (showSensorInitLog) {
-      Serial.println("Could not find a valid BMP280 sensor, check wiring!");
+      Serial.println("Could not find BMP280 sensor. Check wiring!");
     }
   }
   
-  // Configure MPU6050 sensor ranges and filters if available
+  // Configure MPU6050 sensor ranges and filters.
   if (mpuFound) {
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   }
   
-  // Setup OTA update server and mDNS service
-  httpUpdater.setup(&server);
-  if (MDNS.begin("esp32-webupdate")) {
-    Serial.println("MDNS responder started");
+  // Setup OTA update server and mDNS if OTA is enabled.
+  if (enableOTA) {
+    httpUpdater.setup(&server);
+    if (MDNS.begin("esp32-webupdate")) {
+      Serial.println("MDNS responder started");
+    }
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("HTTPUpdateServer ready! Open http://esp32-webupdate.local/update in your browser");
   }
-  MDNS.addService("http", "tcp", 80);
-  Serial.println("HTTPUpdateServer ready! Open http://esp32-webupdate.local/update in your browser");
   
-  // Allocate PWM timers for servo control
+  // Allocate PWM timers and attach the servo.
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
   ESP32PWM::allocateTimer(2);
@@ -629,18 +673,19 @@ void setup() {
   
   lastAltitude = 0;
   
-  // Set up the web server routes
+  // Setup web server route.
   server.on("/", []() {
+    // Capture variables from global scope via lambda capture by reference.
     server.send(200, "text/html", webpage);
   });
   server.begin();
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   
-  // Initialize the I2C bus for the camera on pins SDA_2/SCL_2 (I2C_NUM_0)
+  // Initialize I2C bus for the camera on separate pins.
   Wire.begin(SDA_2, SCL_2, 100000);
   
-  // Conditionally initialize the camera if enabled
+  // Initialize camera if enabled.
   if (cameraEnabled) {
     if (cameraSetup() == 1) {
       if (showCameraOutput) {
@@ -653,7 +698,7 @@ void setup() {
     }
   } else {
     if (showCameraOutput) {
-      Serial.println("Camera initialization skipped (camera disabled).");
+      Serial.println("Camera initialization skipped (disabled).");
     }
   }
   
@@ -661,26 +706,17 @@ void setup() {
 }
 
 // -----------------------
-// Main Loop Function
+// Function: loop()
 // -----------------------
+// Main loop prioritized as follows:
+// 1. High-priority: Sensor readings and altitude calculations (including parachute release check).
+// 2. Lower-priority: SD logging, timelapse capture, web updates.
+// Also, measures loop execution time and broadcasts configuration values.
 void loop() {
-  server.handleClient();
-  webSocket.loop();
+  unsigned long loopStart = millis();  // Start time for loop execution measurement.
+  unsigned long now = millis();
   
-  // Update pressure via API if WiFi is connected
-  if (WiFi.status() == WL_CONNECTED) {
-    if (!apiPressureUpdated) {
-      updatePressureFromAPI();
-    }
-  } else {
-    apiPressureUpdated = false;
-  }
-  
-  // Update SD card space usage
-  totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
-  usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
-  
-  // Read sensor data from BMP280
+  // 1. High-Priority: Sensor Readings & Altitude Calculations
   float bmpTemp = 0, absoluteAltitude = 0, bmpPressure = 0;
   if (bmpFound) {
     bmpTemp = bmp.readTemperature();
@@ -688,7 +724,6 @@ void loop() {
     bmpPressure = bmp.readPressure() / 100.0F;
   }
   
-  // Read sensor data from MPU6050
   sensors_event_t a, g, temp;
   if (mpuFound) {
     mpu.getEvent(&a, &g, &temp);
@@ -698,11 +733,11 @@ void loop() {
     temp.temperature = 0;
   }
   
-  // Calculate relative altitude and altitude drop
+  // Calculate relative altitude (current altitude minus baseline) and altitude drop.
   float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
   float altitudeDrop = lastAltitude - relativeAltitude;
   
-  // Update min/max altitude values
+  // Update min/max values for absolute and relative altitudes and altitude drop.
   if (absoluteAltitude > maxAbsoluteAltitude) maxAbsoluteAltitude = absoluteAltitude;
   if (absoluteAltitude < minAbsoluteAltitude) minAbsoluteAltitude = absoluteAltitude;
   if (relativeAltitude > maxRelativeAltitude) maxRelativeAltitude = relativeAltitude;
@@ -710,78 +745,66 @@ void loop() {
   if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
   if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
   
-  // -----------------------
-  // Sensor Data Logging to Serial (Conditional)
-  // -----------------------
-  if (enableSensorSerialLog && logBMP280Data) {
-    Serial.print(getTimeStampString()); Serial.print(" BMP280 Temp: "); Serial.print(bmpTemp); Serial.println(" *C");
-    Serial.print(getTimeStampString()); Serial.print(" BMP280 Pressure: "); Serial.print(bmpPressure); Serial.println(" hPa");
-    Serial.print(getTimeStampString()); Serial.print(" Absolute Altitude: "); Serial.print(absoluteAltitude); Serial.println(" m");
-    Serial.print(getTimeStampString()); Serial.print(" Relative Altitude: "); Serial.print(relativeAltitude); Serial.println(" m");
-    Serial.print(getTimeStampString()); Serial.print(" Altitude Drop: "); Serial.print(altitudeDrop); Serial.println(" m");
-    Serial.print(getTimeStampString()); Serial.print(" Max Altitude Drop: "); Serial.print(maxAltitudeDrop); Serial.println(" m");
-    Serial.print(getTimeStampString()); Serial.print(" Min Altitude Drop: "); Serial.print(minAltitudeDrop); Serial.println(" m");
-  }
-
-  if (enableSensorSerialLog && logMPU6050Data) {
-    Serial.print(getTimeStampString()); Serial.print(" MPU6050 Temp: "); Serial.print(temp.temperature); Serial.println(" *C");
-    Serial.print(getTimeStampString()); Serial.print(" Accelerometer: "); Serial.print(a.acceleration.x); 
-    Serial.print(", "); Serial.print(a.acceleration.y); Serial.print(", "); Serial.println(a.acceleration.z);
-    Serial.print(getTimeStampString()); Serial.print(" Gyroscope: "); Serial.print(g.gyro.x); 
-    Serial.print(", "); Serial.print(g.gyro.y); Serial.print(", "); Serial.println(g.gyro.z);
-  }
-
-  // General sensor logs (pressure, parachute status, altitude extremes)
-  if (enableSensorSerialLog) {
-    Serial.print(getTimeStampString()); Serial.print(" Local Pressure: "); Serial.print(lastLocalPressure); Serial.println(" hPa");
-    Serial.print(getTimeStampString()); Serial.print(" Default Sea-Level Pressure: "); Serial.println(defaultSeaLevelPressure);
-    Serial.print(getTimeStampString()); Serial.print(" Pressure Source: "); Serial.println(PressureSource);
-    Serial.print(getTimeStampString()); Serial.print(" Parachute Status: "); Serial.println(parachuteStatus);
-    Serial.print(getTimeStampString()); Serial.print(" Max Abs Altitude: "); Serial.print(maxAbsoluteAltitude);
-    Serial.print(" m, Min Abs Altitude: "); Serial.println(minAbsoluteAltitude);
-    Serial.print(getTimeStampString()); Serial.print(" Max Rel Altitude: "); Serial.print(maxRelativeAltitude);
-    Serial.print(" m, Min Rel Altitude: "); Serial.println(minRelativeAltitude);
-  }
-
-  if (enableSensorSerialLog && logSpaceUsage) {
-    Serial.printf("Total space: %lluMB\n", totalSpace);
-    Serial.printf("Used space: %lluMB\n", usedSpace);
-  }
-
-  Serial.println("--------------------");
-  
-  // -----------------------
-  // Logging Data to SD Card
-  // -----------------------
-  char dataString[512];
-  String currentTimestamp = getTimeStampString();
-  snprintf(dataString, sizeof(dataString),
-    "Timestamp: %s, BMP Temp: %.2f, Pressure: %.2f, Absolute Altitude: %.2f, Relative Altitude: %.2f, Altitude Drop: %.2f, MPU Temp: %.2f, Acc: (%.2f; %.2f; %.2f), Gyro: (%.2f; %.2f; %.2f), Parachute Status: %s, Local Pressure: %.2f, Default Sea-Level Pressure: %.2f, API Status: %s, Max Abs Altitude: %.2f, Min Abs Altitude: %.2f, Max Rel Altitude: %.2f, Min Rel Altitude: %.2f, Max Alt Drop: %.2f, Min Alt Drop: %.2f, Total Space: %lluMB, Used Space: %lluMB\n",
-    currentTimestamp.c_str(), bmpTemp, bmpPressure, absoluteAltitude, relativeAltitude, altitudeDrop, temp.temperature,
-    a.acceleration.x, a.acceleration.y, a.acceleration.z,
-    g.gyro.x, g.gyro.y, g.gyro.z,
-    parachuteStatus.c_str(), lastLocalPressure, defaultSeaLevelPressure, PressureSource.c_str(),
-    maxAbsoluteAltitude, minAbsoluteAltitude, maxRelativeAltitude, minRelativeAltitude, maxAltitudeDrop, minAltitudeDrop,
-    totalSpace, usedSpace);
-  appendFile(SD_MMC, "/log.txt", dataString);
-  
-  // Check if parachute should be released based on altitude drop
+  // High-priority: If armed and altitude drop exceeds threshold, release parachute.
   if (parachuteStatus == "armed" && altitudeDrop >= altitudeDropThreshold) {
     parachuteRelease();
     parachuteStatus = "released";
   }
   lastAltitude = relativeAltitude;
   
-  // -----------------------
-  // Send Data to WebSocket Clients at Regular Intervals
-  // -----------------------
-  static unsigned long previousMillis = 0;
-  int interval = 200;
-  unsigned long nowMillis = millis();
-  if ((nowMillis - previousMillis) > interval) {
+  // 2. Lower Priority: SD Card Logging (every SD_LOG_INTERVAL ms)
+  static unsigned long lastSdLogTime = 0;
+  if (now - lastSdLogTime >= SD_LOG_INTERVAL) {
+    char dataString[1024];
+    String currentTimestamp = getTimeStampString();
+    // Append sensor data and configuration values to the SD log.
+    snprintf(dataString, sizeof(dataString),
+      "Timestamp: %s, BMP Temp: %.2f, Pressure: %.2f, Abs Alt: %.2f, Rel Alt: %.2f, Alt Drop: %.2f, MPU Temp: %.2f, "
+      "Acc: (%.2f; %.2f; %.2f), Gyro: (%.2f; %.2f; %.2f), Parachute: %s, Local Pressure: %.2f, Default Sea-Level: %.2f, API: %s, "
+      "MaxAbs: %.2f, MinAbs: %.2f, MaxRel: %.2f, MinRel: %.2f, MaxAltDrop: %.2f, MinAltDrop: %.2f, TotalSpace: %lluMB, UsedSpace: %lluMB, "
+      "logBMP280Data: %s, logMPU6050Data: %s, logSpaceUsage: %s, showCameraOutput: %s, showTimelapseOutput: %s, showSensorInitLog: %s, "
+      "timelapseInterval: %lu, SD_LOG_INTERVAL: %lu, WEB_UPDATE_INTERVAL: %lu, enableOTA: %s, altitudeDropThreshold: %.2f, LoopTime: %lums\n",
+      currentTimestamp.c_str(), bmpTemp, bmpPressure, absoluteAltitude, relativeAltitude, altitudeDrop, temp.temperature,
+      a.acceleration.x, a.acceleration.y, a.acceleration.z,
+      g.gyro.x, g.gyro.y, g.gyro.z,
+      parachuteStatus.c_str(), lastLocalPressure, defaultSeaLevelPressure, PressureSource.c_str(),
+      maxAbsoluteAltitude, minAbsoluteAltitude, maxRelativeAltitude, minRelativeAltitude, maxAltitudeDrop, minAltitudeDrop,
+      totalSpace, usedSpace,
+      logBMP280Data ? "true" : "false",
+      logMPU6050Data ? "true" : "false",
+      logSpaceUsage ? "true" : "false",
+      showCameraOutput ? "true" : "false",
+      showTimelapseOutput ? "true" : "false",
+      showSensorInitLog ? "true" : "false",
+      timelapseInterval, SD_LOG_INTERVAL, WEB_UPDATE_INTERVAL,
+      enableOTA ? "true" : "false",
+      altitudeDropThreshold,
+      millis() - loopStart);
+    appendFile(SD_MMC, "/log.txt", dataString);
+    lastSdLogTime = now;
+  }
+  
+  // 3. Lower Priority: Timelapse Image Capture (every timelapseInterval ms if active)
+  static unsigned long lastTimelapseCaptureTime = 0;
+  if (timelapseActive && (now - lastTimelapseCaptureTime >= timelapseInterval)) {
+    String picPath = captureAndSavePicture();
+    if (showTimelapseOutput) {
+      Serial.print("Timelapse capture saved at: ");
+      Serial.println(picPath);
+    }
+    lastTimelapseCaptureTime = now;
+  }
+  
+  // 4. Lowest Priority: Web Server and WebSocket Updates (every WEB_UPDATE_INTERVAL ms)
+  server.handleClient();
+  webSocket.loop();
+  static unsigned long lastWebUpdateTime = 0;
+  unsigned long loopTime = millis() - loopStart; // Calculate loop execution time.
+  if (now - lastWebUpdateTime >= WEB_UPDATE_INTERVAL) {
     String jsonString = "";
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
     JsonObject object = doc.to<JsonObject>();
+    // Sensor data and altitude values.
     object["AbsoluteAltitude"] = absoluteAltitude;
     object["RelativeAltitude"] = relativeAltitude;
     object["AltitudeDrop"] = altitudeDrop;
@@ -800,29 +823,32 @@ void loop() {
     object["MinAbsAltitude"] = minAbsoluteAltitude;
     object["MaxRelAltitude"] = maxRelativeAltitude;
     object["MinRelAltitude"] = minRelativeAltitude;
+    // SD card space usage.
     object["TotalSpace"] = totalSpace;
     object["UsedSpace"] = usedSpace;
-       // Add timelapse status ("active" or "inactive")
     object["TimelapseStatus"] = timelapseActive ? "active" : "inactive";
+    // Configuration values.
+    object["logBMP280Data"] = logBMP280Data ? "true" : "false";
+    object["logMPU6050Data"] = logMPU6050Data ? "true" : "false";
+    object["logSpaceUsage"] = logSpaceUsage ? "true" : "false";
+    object["showCameraOutput"] = showCameraOutput ? "true" : "false";
+    object["showTimelapseOutput"] = showTimelapseOutput ? "true" : "false";
+    object["showSensorInitLog"] = showSensorInitLog ? "true" : "false";
+    object["timelapseInterval"] = timelapseInterval;
+    object["SD_LOG_INTERVAL"] = SD_LOG_INTERVAL;
+    object["WEB_UPDATE_INTERVAL"] = WEB_UPDATE_INTERVAL;
+    object["enableOTA"] = enableOTA ? "true" : "false";
+    object["altitudeDropThreshold"] = altitudeDropThreshold;
+    object["loopExecutionTime"] = loopTime;
     serializeJson(doc, jsonString);
-    Serial.println(jsonString);
     webSocket.broadcastTXT(jsonString);
-    previousMillis = nowMillis;
+    lastWebUpdateTime = now;
   }
   
-  // -----------------------
-  // Timelapse Image Capture
-  // -----------------------
-  if (timelapseActive) {
-    if (millis() - lastTimelapseCapture >= timelapseInterval) {
-      String picPath = captureAndSavePicture();
-      if (showTimelapseOutput) {
-        Serial.print("Timelapse capture saved at: ");
-        Serial.println(picPath);
-      }
-      lastTimelapseCapture = millis();
-    }
-  }
-
-  delay(100); // Loop delay for stability
+  // Update SD card space usage values.
+  totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
+  usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
+  
+  // A very short delay allows background tasks to run.
+  delay(400);
 }
