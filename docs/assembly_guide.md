@@ -142,7 +142,7 @@ Ensure that all electronic components are available and in good condition:
 
 ## Additional Resources
 
-- [Flight Computer Documentation](docs/flight_computer.md)
-- [Wiring Diagram](docs/wiring_diagram.md)
+- [Flight Computer Documentation](flight_computer.md)
+- [Wiring Diagram](wiring_diagram.md)
 
 *Happy building and best of luck with your launch!*
