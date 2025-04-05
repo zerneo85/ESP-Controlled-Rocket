@@ -80,7 +80,7 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 }
 
 void appendFile(fs::FS &fs, const char * path, const char * message){
-    Serial.printf("Appending to file: %s\n", path);
+     Serial.printf("Appending to file: %s\n", path);
 
     File file = fs.open(path, FILE_APPEND);
     if(!file){
@@ -88,7 +88,7 @@ void appendFile(fs::FS &fs, const char * path, const char * message){
         return;
     }
     if(file.print(message)){
-        Serial.println("Message appended");
+        Serial.println("Message appended to logfile");
     } else {
         Serial.println("Append failed");
     }
@@ -151,4 +151,35 @@ void testFileIO(fs::FS &fs, const char * path){
     end = millis() - start;
     Serial.printf("%u bytes written for %u ms\n", 2048 * 512, end);
     file.close();
+}
+
+
+void writejpg(fs::FS &fs, const char * path, const uint8_t *buf, size_t size){
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+      Serial.println("Failed to open file for writing");
+      return;
+    }
+    file.write(buf, size);
+    Serial.printf("Saved file to path: %s\r\n", path);
+}
+
+int readFileNum(fs::FS &fs, const char * dirname){
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("Failed to open directory");
+        return -1;
+    }
+    if(!root.isDirectory()){
+        Serial.println("Not a directory");
+        return -1;
+    }
+
+    File file = root.openNextFile();
+    int num=0;
+    while(file){
+      file = root.openNextFile();
+      num++;
+    }
+    return num;  
 }
