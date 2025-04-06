@@ -144,7 +144,6 @@ int servoPin = 14;
 // -----------------------
 // LED Color Global Variables
 // -----------------------
-// Global variables for different LED states.
 uint32_t colorArmed;      // Color for "armed" state (red)
 uint32_t colorReleased;   // Color for "released" state (green)
 uint32_t colorUnarmed;    // Color for "unarmed"/"descending" state (blue)
@@ -154,10 +153,8 @@ uint32_t colorAP;         // Color to indicate Access Point mode (red)
 // -----------------------
 // LED Color Initialization Function
 // -----------------------
-// Initializes the global LED color variables using the Freenove_WS2812 library's Wheel() function.
-// Adjust the numeric parameters if necessary.
 void initLEDColors() {
-  colorArmed = strip.Wheel(0);      // Red for armed (adjust if needed)
+  colorArmed = strip.Wheel(0);      // Red for armed
   colorReleased = strip.Wheel(85);  // Green for released
   colorUnarmed = strip.Wheel(170);  // Blue for unarmed/descending
 
@@ -169,25 +166,19 @@ void initLEDColors() {
 // -----------------------
 // LED Sequential Display Function
 // -----------------------
-// Lights up each LED one by one with different colors (for testing purposes).
 void showLEDColorsSequentially() {
-  // Display "armed" color sequentially
   for (int i = 0; i < LEDS_COUNT; i++) {
     strip.setLedColorData(i, colorArmed);
     strip.show();
     delay(100);
   }
   delay(500);
-
-  // Display "released" color sequentially
   for (int i = 0; i < LEDS_COUNT; i++) {
     strip.setLedColorData(i, colorReleased);
     strip.show();
     delay(100);
   }
   delay(500);
-
-  // Display "unarmed" color sequentially
   for (int i = 0; i < LEDS_COUNT; i++) {
     strip.setLedColorData(i, colorUnarmed);
     strip.show();
@@ -199,16 +190,13 @@ void showLEDColorsSequentially() {
 // -----------------------
 // LED Blink Function
 // -----------------------
-// Blinks all LEDs at once with a specified color a given number of times.
 void blinkColor(uint32_t color, int times, int delayms) {
   for (int t = 0; t < times; t++) {
-    // Turn all LEDs ON with the specified color
     for (int i = 0; i < LEDS_COUNT; i++) {
       strip.setLedColorData(i, color);
     }
     strip.show();
     delay(delayms);
-    // Turn all LEDs OFF
     for (int i = 0; i < LEDS_COUNT; i++) {
       strip.setLedColorData(i, 0);
     }
@@ -220,7 +208,6 @@ void blinkColor(uint32_t color, int times, int delayms) {
 // -----------------------
 // LED Blink Sequence for WiFi Status
 // -----------------------
-// Blinks green 3 times if connected, or red 3 times if in AP mode.
 void indicateWiFiStatus(bool connected) {
   if (connected) {
     blinkColor(colorConnected, 3, 250);
@@ -232,7 +219,6 @@ void indicateWiFiStatus(bool connected) {
 // -----------------------
 // Time Utility Function
 // -----------------------
-// Returns a formatted timestamp string in "YYYY-MM-DD HH:MM:SS" format.
 String getTimeStampString() {
   if (lastSuccessfulNTP != 0) {
     unsigned long currentEpoch = lastSuccessfulNTP + ((millis() - lastSyncMillis) / 1000);
@@ -254,7 +240,6 @@ String getTimeStampString() {
 // -----------------------
 // Pressure Utility Function
 // -----------------------
-// Returns the cached local sea-level pressure.
 float getLocalSeaLevelPressure() {
   return lastLocalPressure;
 }
@@ -315,26 +300,19 @@ void updatePressureFromAPI() {
 // -----------------------
 // Parachute Release Function
 // -----------------------
-// Releases the parachute by logging the event, actuating the servo, updating the status, and updating the LED strip.
 void parachuteRelease() {
   Serial.println("Altitude drop detected! Releasing parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
-  // Log the release event to the SD card
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.txt", eventLog);
 
-  // Actuate the servo twice to release the parachute
   for (int i = 0; i < 2; i++) {
     parachuteservo.write(180);
     delay(200);
     parachuteservo.write(0);
   }
-
-  // Update parachute status to "released"
   parachuteStatus = "released";
-
-  // Update LED strip to show "released" state (green)
   for (int i = 0; i < LEDS_COUNT; i++) {
     strip.setLedColorData(i, colorReleased);
   }
@@ -344,22 +322,15 @@ void parachuteRelease() {
 // -----------------------
 // Parachute Armed Function
 // -----------------------
-// Arms the parachute by capturing the baseline altitude, locking the current relative altitude,
-// resetting altitude tracking values, actuating the servo, and updating the status.
-// This reset occurs every time the function is called, even if already armed.
 void parachuteArmed() {
   Serial.println("Arming parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
-  // Log the arming event to the SD card
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.txt", eventLog);
 
-  // Capture baseline altitude if not already captured
   if (!baselineCaptured) {
-    bmp.setSampling(Adafruit_BMP280::MODE_NORMAL, Adafruit_BMP280::SAMPLING_X2,
-                    Adafruit_BMP280::SAMPLING_X16, Adafruit_BMP280::FILTER_X16,
-                    Adafruit_BMP280::STANDBY_MS_500);
+    // Since sampling is now set once in setup, we don't need to set it here again.
     baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
     baselineCaptured = true;
     Serial.print("Baseline altitude captured: ");
@@ -367,25 +338,19 @@ void parachuteArmed() {
     Serial.println(" m");
   }
 
-  // Lock the current relative altitude as reference for measuring drop after arming
   float currentRel = bmp.readAltitude(getLocalSeaLevelPressure()) - baselineAltitude;
   armedMaxRelativeAltitude = currentRel;
 
-  // Reset relative altitude and drop tracking values
   maxRelativeAltitude = 0;
   minRelativeAltitude = 1000000.0;
   maxAltitudeDrop = 0;
   minAltitudeDrop = 1000000.0;
 
-  // Actuate the servo to indicate arming
   parachuteservo.write(0);
   delay(200);
   parachuteservo.write(180);
 
-  // Update parachute status to "armed"
   parachuteStatus = "armed";
-
-  // Update LED strip to show "armed" state (red)
   for (int i = 0; i < LEDS_COUNT; i++) {
     strip.setLedColorData(i, colorArmed);
   }
@@ -395,7 +360,6 @@ void parachuteArmed() {
 // -----------------------
 // WebSocket Event Handler
 // -----------------------
-// Processes incoming WebSocket messages.
 void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
@@ -404,32 +368,28 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
     case WStype_CONNECTED:
       Serial.println("Client " + String(num) + " connected");
       break;
-    case WStype_TEXT:
-      {
-        StaticJsonDocument<200> doc;
-        DeserializationError error = deserializeJson(doc, payload);
-        if (error) {
-          Serial.print(F("deserializeJson() failed: "));
-          Serial.println(error.f_str());
-          return;
-        } else {
-          const char* g_parachute = doc["parachute"];
-          Serial.println("Received command from user: " + String(num));
-          Serial.println("Parachute: " + String(g_parachute));
-          // Process "Armed" command (only if not already armed)
-          if (String(g_parachute) == "Armed" && parachuteStatus != "armed") {
-            parachuteArmed();
-            Serial.println("Parachute armed command processed.");
-          }
-          // Process "Released" command regardless of current status for testing
-          else if (String(g_parachute) == "Released") {
-            parachuteRelease();
-            Serial.println("Parachute release command processed.");
-          }
+    case WStype_TEXT: {
+      StaticJsonDocument<200> doc;
+      DeserializationError error = deserializeJson(doc, payload);
+      if (error) {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        return;
+      } else {
+        const char* g_parachute = doc["parachute"];
+        Serial.println("Received command from user: " + String(num));
+        Serial.println("Parachute: " + String(g_parachute));
+        if (String(g_parachute) == "Armed" && parachuteStatus != "armed") {
+          parachuteArmed();
+          Serial.println("Parachute armed command processed.");
+        } else if (String(g_parachute) == "Released") {
+          parachuteRelease();
+          Serial.println("Parachute release command processed.");
         }
-        Serial.println("");
-        break;
       }
+      Serial.println("");
+      break;
+    }
   }
 }
 
@@ -440,7 +400,6 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("Starting setup..."));
 
-  // Initialize EEPROM
   EEPROM.begin(EEPROM_SIZE);
   float storedPressure;
   EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
@@ -452,7 +411,6 @@ void setup() {
     PressureSource = "Default Sea-Level Pressure";
   }
 
-  // Initialize WiFi in STA mode and attempt to connect
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, wifiPassword);
   Serial.print("Connecting to WiFi");
@@ -465,7 +423,6 @@ void setup() {
     Serial.println("\nWiFi connected.");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-    // Blink green to indicate connection
     blinkColor(colorConnected, 3, 250);
   } else {
     Serial.println("\nWiFi connection failed. Starting Access Point...");
@@ -473,16 +430,13 @@ void setup() {
     WiFi.softAP(apSSID, apPassword);
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
-    // Blink red to indicate AP mode
     blinkColor(colorAP, 3, 250);
   }
 
-  // Update pressure if connected
   if (WiFi.status() == WL_CONNECTED) {
     updatePressureFromAPI();
   }
 
-  // Initialize NTP time
   timeClient.begin();
   timeClient.update();
   unsigned long currentEpoch = timeClient.getEpochTime();
@@ -495,7 +449,6 @@ void setup() {
     Serial.println("Failed to get NTP time.");
   }
 
-  // Initialize SD card and rotate log file if necessary
   Serial.print("Initializing SD card...");
   SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0);
   if (!SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5)) {
@@ -530,10 +483,8 @@ void setup() {
   Serial.printf("Total space: %lluMB\n", totalSpace);
   Serial.printf("Used space: %lluMB\n", usedSpace);
 
-  // Initialize I2C for sensors
   Wire.begin(42, 37);
 
-  // Initialize MPU6050 sensor
   if (mpu.begin(0x68)) {
     mpuFound = true;
     if (showSensorInitLog) {
@@ -546,7 +497,6 @@ void setup() {
     }
   }
 
-  // Initialize BMP280 sensor
   if (bmp.begin(0x76)) {
     bmpFound = true;
     if (showSensorInitLog) {
@@ -559,14 +509,21 @@ void setup() {
     }
   }
 
-  // Configure MPU6050 sensor settings if found
   if (mpuFound) {
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   }
+  
+  // Set BMP280 sampling once in setup
+  if (bmpFound) {
+    bmp.setSampling(Adafruit_BMP280::MODE_NORMAL, 
+                    Adafruit_BMP280::SAMPLING_X2, 
+                    Adafruit_BMP280::SAMPLING_X16, 
+                    Adafruit_BMP280::FILTER_X16, 
+                    Adafruit_BMP280::STANDBY_MS_500);
+  }
 
-  // Setup OTA update server
   httpUpdater.setup(&server);
   if (MDNS.begin("esp32-webupdate")) {
     Serial.println("MDNS responder started");
@@ -574,17 +531,14 @@ void setup() {
   MDNS.addService("http", "tcp", 80);
   Serial.printf("HTTPUpdateServer ready! Open http://esp32-webupdate.local/update in your browser\n");
 
-  // Allocate timers for servo control
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
 
-  // Initialize servo for parachute control
   parachuteservo.setPeriodHertz(50);
   parachuteservo.attach(servoPin, 1000, 2000);
 
-  // Setup web server and WebSocket
   server.on("/", []() {
     server.send(200, "text/html", webpage);
   });
@@ -592,23 +546,15 @@ void setup() {
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
-  // Initialize LED strip using Freenove_WS2812 library
   strip.begin();
   strip.setBrightness(20);
   strip.show();
 
-  // Initialize LED color variables
   initLEDColors();
-
-  // (Optional) Run sequential LED test to display the three defined colors
   showLEDColorsSequentially();
 
   Serial.println("Setup complete.");
-
-  // Indicate overall network status via LED blink
   indicateWiFiStatus(WiFi.status() == WL_CONNECTED);
-
-  // Set initial LED state to "unarmed" (blue)
   for (int i = 0; i < LEDS_COUNT; i++) {
     strip.setLedColorData(i, colorUnarmed);
   }
@@ -619,11 +565,9 @@ void setup() {
 // Main Loop Function
 // -----------------------
 void loop() {
-  // Handle web server and WebSocket communications
   server.handleClient();
   webSocket.loop();
 
-  // Update pressure reading if WiFi is connected
   if (WiFi.status() == WL_CONNECTED) {
     if (!apiPressureUpdated) {
       updatePressureFromAPI();
@@ -632,32 +576,24 @@ void loop() {
     apiPressureUpdated = false;
   }
 
-  // Update SD card space info
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
 
-  // Set sampling for BMP280 sensor
-  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL, Adafruit_BMP280::SAMPLING_X2,
-                  Adafruit_BMP280::SAMPLING_X16, Adafruit_BMP280::FILTER_X16,
-                  Adafruit_BMP280::STANDBY_MS_500);
+  // Removed BMP280 sampling from loop since it is now set once in setup
 
-  // Read sensor values
   float bmpTemp = bmp.readTemperature();
   float absoluteAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  // Compute relative altitude: if unarmed, display 0; if armed/released, subtract baseline.
   float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
 
-  // Update altitude extremes unconditionally
   if (absoluteAltitude > maxAbsoluteAltitude) maxAbsoluteAltitude = absoluteAltitude;
   if (absoluteAltitude < minAbsoluteAltitude) minAbsoluteAltitude = absoluteAltitude;
   if (relativeAltitude > maxRelativeAltitude) maxRelativeAltitude = relativeAltitude;
   if (relativeAltitude < minRelativeAltitude) minRelativeAltitude = relativeAltitude;
 
   float altitudeDrop;
-  // If armed, compute drop relative to locked armedMaxRelativeAltitude; else use updated maxRelativeAltitude.
   if (parachuteStatus == "armed") {
     altitudeDrop = armedMaxRelativeAltitude - relativeAltitude;
   } else {
@@ -666,7 +602,6 @@ void loop() {
   if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
   if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
 
-  // Print sensor readings and status to the Serial Monitor
   Serial.print(getTimeStampString());
   Serial.print(" BMP280 Temp: ");
   Serial.print(bmpTemp);
@@ -738,7 +673,6 @@ void loop() {
   Serial.println(minRelativeAltitude);
   Serial.println("--------------------");
 
-  // Log sensor data to SD card
   char dataString[512];
   String currentTimestamp = getTimeStampString();
   snprintf(dataString, sizeof(dataString),
@@ -751,12 +685,10 @@ void loop() {
            totalSpace, usedSpace);
   appendFile(SD_MMC, "/log.txt", dataString);
 
-  // If the parachute is armed and the altitude drop exceeds the threshold, trigger release.
   if (parachuteStatus == "armed" && altitudeDrop >= altitudeDropThreshold) {
     parachuteRelease();
   }
 
-  // Broadcast JSON data via WebSocket every 50ms
   static unsigned long previousMillis = 0;
   int interval = 50;
   unsigned long nowMillis = millis();
@@ -793,6 +725,5 @@ void loop() {
     previousMillis = nowMillis;
   }
 
-  // Delay between loop iterations
   delay(50);
 }
