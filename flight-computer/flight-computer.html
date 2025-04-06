@@ -135,6 +135,18 @@
             <td id='MinRelAltitude'>-</td>
         </tr>
         <tr>
+            <td>Max Altitude Drop</td>
+            <td id='MaxAltDrop'>-</td>
+        </tr>
+        <tr>
+            <td>Min Altitude Drop</td>
+            <td id='MinAltDrop'>-</td>
+        </tr>
+        <tr>
+            <td>Parachute Release Threshold</td>
+            <td id='AltDropThreshold'>-</td>
+        </tr>
+        <tr>
             <td>Total Space (MB)</td>
             <td id='TotalSpace'>-</td>
         </tr>
@@ -143,10 +155,11 @@
             <td id='UsedSpace'>-</td>
         </tr>
     </table>
-    <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button></div>
+    <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_RELEASE'>Release Parachute</button></div>
     <script>
         var Socket;
         document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
+        document.getElementById('BTN_RELEASE').addEventListener('click', button_release);
 
         function init() {
             Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
@@ -158,6 +171,13 @@
         function button_send_back() {
             var msg = {
                 parachute: 'Armed'
+            };
+            Socket.send(JSON.stringify(msg));
+        }
+
+        function button_release() {
+            var msg = {
+                parachute: 'Released'
             };
             Socket.send(JSON.stringify(msg));
         }
@@ -180,6 +200,9 @@
             document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-';
             document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-';
             document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';
+            document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop || '-';
+            document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop || '-';
+            document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold || '-';
             document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';
             document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';
         }
