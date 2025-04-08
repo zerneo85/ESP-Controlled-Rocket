@@ -9,11 +9,11 @@
  *   with fallback to EEPROM or a default value.
  * - Uses the NTP time (updated only once at boot) for all timestamps.
  * - Each sensor log line now includes the current SD card TotalSpace and UsedSpace values.
+ * - NEW: Configurable triggers for altitude drop and accelerometer (X, Y, Z) values.
+ * - NEW: Web interface to set the four trigger thresholds and choose if they combine in AND or OR mode.
  */
 
-// -----------------------
-// Library Inclusions
-// -----------------------
+
 #define sensor_t adafruit_sensor_t
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_BMP280.h>
@@ -27,6 +27,9 @@
 #include "sd_read_write.h"
 #include <ESP32Servo.h>
 #include <WiFi.h>
+extern "C" {
+  #include "esp_wifi.h" // For esp_wifi_set_ps()
+}
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 #include <WebServer.h>
@@ -37,6 +40,8 @@
 #include <HTTPUpdateServer.h>
 #include <ESPmDNS.h>
 #include <EEPROM.h>
+#include <math.h>  // Needed for fabs()
+
 
 // -----------------------
 // LED Circle Setup using Freenove_WS2812 Library
@@ -62,10 +67,10 @@ String PressureSource = "";        // Source for sea-level pressure reading
 float lastLocalPressure = 1026.0;  // Default sea-level pressure (hPa)
 bool apiPressureUpdated = false;
 
-bool showSensorInitLog = true;  // Flag to show sensor initialization messages
+bool showSensorInitLog = true;     // Flag to show sensor initialization messages
 
-bool bmpFound = false;  // BMP280 sensor detected flag
-bool mpuFound = false;  // MPU6050 sensor detected flag
+bool bmpFound = false;             // BMP280 sensor detected flag
+bool mpuFound = false;             // MPU6050 sensor detected flag
 
 // WiFi credentials and AP settings
 const char* ssid = "TDGC-Rocket";
@@ -91,10 +96,19 @@ unsigned long lastSyncMillis = 0;
 // -----------------------
 // Parachute & Altitude Variables
 // -----------------------
-const float altitudeDropThreshold = 0.8;  // Parachute release threshold
-float baselineAltitude = 0;               // Baseline altitude at arming
-bool baselineCaptured = false;            // Flag if baseline altitude captured
-String parachuteStatus = "unarmed";       // "unarmed", "armed", or "released"
+// These are now mutable so they can be updated via the web interface.
+float altitudeDropThreshold = 0.8; // Altitude drop release threshold
+// NEW: Accelerometer trigger thresholds (for X, Y, and Z)
+// Set these to values suitable for your application.
+float accXThreshold = 15.0;  
+float accYThreshold = 15.0;
+float accZThreshold = 15.0;
+// NEW: Trigger logic combination: true = AND, false = OR.
+bool useAndLogic = false;  // Default is OR logic (only one condition needed)
+
+float baselineAltitude = 0;        // Baseline altitude at arming
+bool baselineCaptured = false;     // Flag if baseline altitude captured
+String parachuteStatus = "unarmed"; // "unarmed", "armed", or "released"
 
 // Global altitude tracking (for logging)
 float maxAbsoluteAltitude = -1000000.0;
@@ -110,8 +124,9 @@ float armedMaxRelativeAltitude = 0;
 // -----------------------
 // Compressed Web Page (One-line HTML)
 // -----------------------
-// Added an extra button for "Release Parachute" alongside "Arm Parachute".
-String webpage = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>Flight Computer</title><style>body{background-color:#EEEEEE;font-family:Arial,sans-serif;color:#003366;margin:0;padding:20px}h1{text-align:center;margin-bottom:20px}.data-table{margin:0 auto;border-collapse:collapse;width:90%;max-width:600px;background-color:#FFF;box-shadow:0 0 10px rgba(0,0,0,0.1)}.data-table th,.data-table td{padding:12px 15px;border:1px solid #CCC;text-align:left}.data-table th{background-color:#003366;color:#FFF}.data-table tr:nth-child(even){background-color:#F9F9F9}.button-container{text-align:center;margin-top:20px}button{background-color:#003366;color:#FFF;border:none;padding:10px 20px;font-size:16px;cursor:pointer}button:hover{background-color:#0055AA}</style></head><body><h1>Flight Information</h1><table class='data-table'><tr><th>Parameter</th><th>Value</th></tr><tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr><tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr><tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr><tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr><tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr><tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr><tr><td>Accelerometer</td><td id='Accelerometer'>-</td></tr><tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr><tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr><tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr><tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr><tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr><tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr><tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr><tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr><tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr><tr><td>Max Altitude Drop</td><td id='MaxAltDrop'>-</td></tr><tr><td>Min Altitude Drop</td><td id='MinAltDrop'>-</td></tr><tr><td>Parachute Release Threshold</td><td id='AltDropThreshold'>-</td></tr><tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr><tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr></table><div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_RELEASE'>Release Parachute</button></div><script>var Socket;document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);document.getElementById('BTN_RELEASE').addEventListener('click', button_release);function init(){Socket=new WebSocket('ws://'+window.location.hostname+':81/');Socket.onmessage=function(event){processCommand(event);};}function button_send_back(){var msg={ parachute:'Armed' };Socket.send(JSON.stringify(msg));}function button_release(){var msg={ parachute:'Released' };Socket.send(JSON.stringify(msg));}function processCommand(event){var obj=JSON.parse(event.data);document.getElementById('AbsoluteAltitude').innerHTML=obj.AbsoluteAltitude||'-';document.getElementById('RelativeAltitude').innerHTML=obj.RelativeAltitude||'-';document.getElementById('AltitudeDrop').innerHTML=obj.AltitudeDrop||'-';document.getElementById('BMP280Temp').innerHTML=obj.BMP280Temp||'-';document.getElementById('BMP280Pressure').innerHTML=obj.BMP280Pressure||'-';document.getElementById('MPU6050Temp').innerHTML=obj.MPU6050Temp||'-';document.getElementById('Accelerometer').innerHTML=obj.Accelerometer||'-';document.getElementById('Gyroscope').innerHTML=obj.Gyroscope||'-';document.getElementById('ParachuteStatus').innerHTML=obj.ParachuteStatus||'-';document.getElementById('LocalPressure').innerHTML=obj.LocalPressure||'-';document.getElementById('DefaultSeaLevelPressure').innerHTML=obj.DefaultSeaLevelPressure||'-';document.getElementById('PressureSource').innerHTML=obj.PressureSource||'-';document.getElementById('MaxAbsAltitude').innerHTML=obj.MaxAbsAltitude||'-';document.getElementById('MinAbsAltitude').innerHTML=obj.MinAbsAltitude||'-';document.getElementById('MaxRelAltitude').innerHTML=obj.MaxRelAltitude||'-';document.getElementById('MinRelAltitude').innerHTML=obj.MinRelAltitude||'-';document.getElementById('MaxAltDrop').innerHTML=obj.MaxAltDrop||'-';document.getElementById('MinAltDrop').innerHTML=obj.MinAltDrop||'-';document.getElementById('AltDropThreshold').innerHTML=obj.AltDropThreshold||'-';document.getElementById('TotalSpace').innerHTML=obj.TotalSpace||'-';document.getElementById('UsedSpace').innerHTML=obj.UsedSpace||'-';}window.onload=function(event){init();}</script></body></html>";
+// The web interface now shows additional input fields for the accelerometer thresholds
+// and for choosing the trigger logic (AND/OR). The page is compressed into one line.
+String webpage = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>Flight Computer</title><style>body{background-color:#EEEEEE;font-family:Arial,sans-serif;color:#003366;margin:0;padding:20px}h1{text-align:center;margin-bottom:20px}.data-table{margin:0 auto;border-collapse:collapse;width:90%;max-width:600px;background-color:#FFF;box-shadow:0 0 10px rgba(0,0,0,0.1)}.data-table th,.data-table td{padding:12px 15px;border:1px solid #CCC;text-align:left}.data-table th{background-color:#003366;color:#FFF}.data-table tr:nth-child(even){background-color:#F9F9F9}.button-container{text-align:center;margin-top:20px}button{background-color:#003366;color:#FFF;border:none;padding:10px 20px;font-size:16px;cursor:pointer}button:hover{background-color:#0055AA}input[type='number'], select{padding:8px;font-size:16px;width:150px;margin-right:10px;margin-top:5px}</style></head><body><h1>Flight Information</h1><table class='data-table'><tr><th>Parameter</th><th>Value</th></tr><tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr><tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr><tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr><tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr><tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr><tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr><tr><td>Accelerometer</td><td id='Accelerometer'>-</td></tr><tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr><tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr><tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr><tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr><tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr><tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr><tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr><tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr><tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr><tr><td>Max Altitude Drop</td><td id='MaxAltDrop'>-</td></tr><tr><td>Min Altitude Drop</td><td id='MinAltDrop'>-</td></tr><tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr><tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr><tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr><tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr><tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr><tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr><tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr></table><div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_RELEASE'>Release Parachute</button></div><div class='button-container'><input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'><br><input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'><br><input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'><br><input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'><br><select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select><br><button type='button' id='BTN_UPDATE_TRIGGERS'>Update Triggers</button></div><script>var Socket;document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);document.getElementById('BTN_RELEASE').addEventListener('click', button_release);document.getElementById('BTN_UPDATE_TRIGGERS').addEventListener('click', button_update_triggers);function init(){Socket=new WebSocket('ws://'+window.location.hostname+':81/');Socket.onmessage=function(event){processCommand(event);};}function button_send_back(){var msg={ parachute:'Armed' };Socket.send(JSON.stringify(msg));}function button_release(){var msg={ parachute:'Released' };Socket.send(JSON.stringify(msg));}function button_update_triggers(){var altVal = parseFloat(document.getElementById('newAltThreshold').value);var accXVal = parseFloat(document.getElementById('newAccX').value);var accYVal = parseFloat(document.getElementById('newAccY').value);var accZVal = parseFloat(document.getElementById('newAccZ').value);var logicVal = document.getElementById('triggerLogic').value;var msg = { newThreshold: altVal, newAccX: accXVal, newAccY: accYVal, newAccZ: accZVal, newTriggerLogic: logicVal };Socket.send(JSON.stringify(msg));}function processCommand(event){var obj = JSON.parse(event.data);document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-';document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-';document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-';document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-';document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-';document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-';document.getElementById('Accelerometer').innerHTML = obj.Accelerometer || '-';document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-';document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-';document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-';document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-';document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-';document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-';document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-';document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-';document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop || '-';document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop || '-';document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold || '-';document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold || '-';document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold || '-';document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold || '-';document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic || '-';document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';}window.onload = function(event){ init(); }</script></body></html>";
 
 // -----------------------
 // Web Server & OTA Instances
@@ -301,7 +316,7 @@ void updatePressureFromAPI() {
 // Parachute Release Function
 // -----------------------
 void parachuteRelease() {
-  Serial.println("Altitude drop detected! Releasing parachute...");
+  Serial.println("Trigger condition met! Releasing parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
@@ -330,7 +345,6 @@ void parachuteArmed() {
   appendFile(SD_MMC, "/log.txt", eventLog);
 
   if (!baselineCaptured) {
-    // Since sampling is now set once in setup, we don't need to set it here again.
     baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
     baselineCaptured = true;
     Serial.print("Baseline altitude captured: ");
@@ -376,8 +390,39 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
         Serial.println(error.f_str());
         return;
       } else {
+        // Process new trigger settings from the web interface:
+        if (doc.containsKey("newThreshold")) {
+          float newAlt = doc["newThreshold"];
+          altitudeDropThreshold = newAlt;
+          Serial.print("New Altitude Drop Threshold set: ");
+          Serial.println(altitudeDropThreshold);
+        }
+        if (doc.containsKey("newAccX")) {
+          float newAccX = doc["newAccX"];
+          accXThreshold = newAccX;
+          Serial.print("New Accelerometer X threshold set: ");
+          Serial.println(accXThreshold);
+        }
+        if (doc.containsKey("newAccY")) {
+          float newAccY = doc["newAccY"];
+          accYThreshold = newAccY;
+          Serial.print("New Accelerometer Y threshold set: ");
+          Serial.println(accYThreshold);
+        }
+        if (doc.containsKey("newAccZ")) {
+          float newAccZ = doc["newAccZ"];
+          accZThreshold = newAccZ;
+          Serial.print("New Accelerometer Z threshold set: ");
+          Serial.println(accZThreshold);
+        }
+        if (doc.containsKey("newTriggerLogic")) {
+          String newLogic = doc["newTriggerLogic"];
+          useAndLogic = (newLogic == "AND");
+          Serial.print("New Trigger Logic set: ");
+          Serial.println(useAndLogic ? "AND" : "OR");
+        }
         const char* g_parachute = doc["parachute"];
-        Serial.println("Received command from user: " + String(num));
+        Serial.println("Received command from client " + String(num));
         Serial.println("Parachute: " + String(g_parachute));
         if (String(g_parachute) == "Armed" && parachuteStatus != "armed") {
           parachuteArmed();
@@ -399,17 +444,13 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
 void setup() {
   Serial.begin(115200);
   Serial.println(F("Starting setup..."));
+  
 
-  EEPROM.begin(EEPROM_SIZE);
-  float storedPressure;
-  EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
-  if (storedPressure > 500.0 && storedPressure < 1100.0) {
-    lastLocalPressure = storedPressure;
-    PressureSource = "EEPROM Memory";
-  } else {
-    lastLocalPressure = 1026.0;
-    PressureSource = "Default Sea-Level Pressure";
-  }
+  // Disable WiFi power saving:
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
+  
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, wifiPassword);
@@ -423,19 +464,34 @@ void setup() {
     Serial.println("\nWiFi connected.");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-    blinkColor(colorConnected, 3, 250);
+   
   } else {
     Serial.println("\nWiFi connection failed. Starting Access Point...");
     WiFi.mode(WIFI_AP);
     WiFi.softAP(apSSID, apPassword);
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
-    blinkColor(colorAP, 3, 250);
+
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     updatePressureFromAPI();
   }
+
+
+  EEPROM.begin(EEPROM_SIZE);
+  float storedPressure;
+  EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
+  if (storedPressure > 500.0 && storedPressure < 1100.0) {
+    lastLocalPressure = storedPressure;
+    PressureSource = "EEPROM Memory";
+  } else {
+    lastLocalPressure = 1026.0;
+    PressureSource = "Default Sea-Level Pressure";
+  }
+
+
+
 
   timeClient.begin();
   timeClient.update();
@@ -539,19 +595,25 @@ void setup() {
   parachuteservo.setPeriodHertz(50);
   parachuteservo.attach(servoPin, 1000, 2000);
 
-  server.on("/", []() {
-    server.send(200, "text/html", webpage);
-  });
-  server.begin();
-  webSocket.begin();
-  webSocket.onEvent(webSocketEvent);
 
+
+delay(1000);
+
+  
   strip.begin();
+   Serial.println("Strip Begin");
   strip.setBrightness(20);
+    Serial.println("Set Brightness");
   strip.show();
-
+   Serial.println("Strip Show");
+delay(1000);
   initLEDColors();
+     Serial.println("Strip InitLedColors");
+  delay(1000);
   showLEDColorsSequentially();
+       Serial.println("Strip showLEDColorsSequentially");
+  delay(1000);
+
 
   Serial.println("Setup complete.");
   indicateWiFiStatus(WiFi.status() == WL_CONNECTED);
@@ -559,6 +621,19 @@ void setup() {
     strip.setLedColorData(i, colorUnarmed);
   }
   strip.show();
+
+
+
+  server.on("/", []() {
+    server.send(200, "text/html", webpage);
+  });
+  server.begin();
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+
+
+
+
 }
 
 // -----------------------
@@ -578,8 +653,6 @@ void loop() {
 
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
-
-  // Removed BMP280 sampling from loop since it is now set once in setup
 
   float bmpTemp = bmp.readTemperature();
   float absoluteAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
@@ -602,6 +675,7 @@ void loop() {
   if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
   if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
 
+  // Verbose output for debugging:
   Serial.print(getTimeStampString());
   Serial.print(" BMP280 Temp: ");
   Serial.print(bmpTemp);
@@ -673,6 +747,21 @@ void loop() {
   Serial.println(minRelativeAltitude);
   Serial.println("--------------------");
 
+  // CSV-formatted output for Serial Plotter:
+  Serial.print(bmpTemp, 2); Serial.print(",");
+  Serial.print(bmp.readPressure() / 100.0F, 2); Serial.print(",");
+  Serial.print(absoluteAltitude, 2); Serial.print(",");
+  Serial.print(relativeAltitude, 2); Serial.print(",");
+  Serial.print(altitudeDrop, 2); Serial.print(",");
+  Serial.print(temp.temperature, 2); Serial.print(",");
+  Serial.print(a.acceleration.x, 2); Serial.print(",");
+  Serial.print(a.acceleration.y, 2); Serial.print(",");
+  Serial.print(a.acceleration.z, 2); Serial.print(",");
+  Serial.print(g.gyro.x, 2); Serial.print(",");
+  Serial.print(g.gyro.y, 2); Serial.print(",");
+  Serial.println(g.gyro.z, 2);
+
+  // Log sensor data to SD card:
   char dataString[512];
   String currentTimestamp = getTimeStampString();
   snprintf(dataString, sizeof(dataString),
@@ -685,10 +774,20 @@ void loop() {
            totalSpace, usedSpace);
   appendFile(SD_MMC, "/log.txt", dataString);
 
-  if (parachuteStatus == "armed" && altitudeDrop >= altitudeDropThreshold) {
-    parachuteRelease();
+  // NEW: Check trigger conditions using all four thresholds and the selected logic
+  if (parachuteStatus == "armed") {
+    bool triggerAlt = (altitudeDrop >= altitudeDropThreshold);
+    bool triggerAccX = (fabs(a.acceleration.x) >= accXThreshold);
+    bool triggerAccY = (fabs(a.acceleration.y) >= accYThreshold);
+    bool triggerAccZ = (fabs(a.acceleration.z) >= accZThreshold);
+    bool triggerCondition = useAndLogic ? (triggerAlt && triggerAccX && triggerAccY && triggerAccZ)
+                                        : (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
+    if (triggerCondition) {
+      parachuteRelease();
+    }
   }
 
+  // Build JSON for WebSocket broadcast (updated to include trigger settings)
   static unsigned long previousMillis = 0;
   int interval = 50;
   unsigned long nowMillis = millis();
@@ -714,13 +813,15 @@ void loop() {
     object["MinAbsAltitude"] = minAbsoluteAltitude;
     object["MaxRelAltitude"] = maxRelativeAltitude;
     object["MinRelAltitude"] = minRelativeAltitude;
-    object["MaxAltDrop"] = maxAltitudeDrop;
-    object["MinAltDrop"] = minAltitudeDrop;
+    // Include trigger settings in the JSON:
     object["AltDropThreshold"] = altitudeDropThreshold;
+    object["AccXThreshold"] = accXThreshold;
+    object["AccYThreshold"] = accYThreshold;
+    object["AccZThreshold"] = accZThreshold;
+    object["TriggerLogic"] = useAndLogic ? "AND" : "OR";
     object["TotalSpace"] = totalSpace;
     object["UsedSpace"] = usedSpace;
     serializeJson(doc, jsonString);
-    Serial.println(jsonString);
     webSocket.broadcastTXT(jsonString);
     previousMillis = nowMillis;
   }
