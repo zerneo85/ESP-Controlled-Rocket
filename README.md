@@ -61,7 +61,7 @@ The flight computer firmware is organized into modules that handle:
 
 ### Flight Computer Screenshot
 
-![Flight Computer Screenshot](media/flight_computer_dashboard_4.png)
+![Flight Computer Screenshot](media/flight_computer_dashboard_5.png)
 
 ---
 
