@@ -115,97 +115,61 @@ For detailed build instructions, refer to the [Assembly Guide](docs/assembly_gui
 The firmware includes various configuration options to control debugging output and logging behavior, such as sensor logs, SD card logging, and LED status indications.
 
 ---
-## Rocket Performance Calculations
+## Rocket Performance Calculations (Various Tube Lengths and Operating Pressures)
 
-The performance of a water- and air-powered rocket depends on several design and operating parameters. For this project, we assume:
+Below is a composite table showing key estimated performance parameters for a water– and air–powered rocket with a 6 cm inner diameter tube using a Gardena connector nozzle (~10 mm diameter). The calculations assume an optimal water fill of about 42% of the internal volume and a dry mass defined as a fixed payload of 0.385 kg plus 0.00475 kg per cm of tube length. For each tube length the performance metrics are given for four operating pressures (4, 6, 8, and 10 bar). (All values are approximate.)
 
-- **Tube Dimensions:**  
-  A 6 cm diameter tube (radius = 3 cm) with variable body (tube) lengths.
-  
-- **Internal Volume (L):**  
-  \(V = \pi \times (0.03\,m)^2 \times L_{(m)}\)  
-  Converted to liters, for example:  
-  For a 100 cm (1 m) tube,  
-  \(V \approx 2.83\,L\).
+*Calculation Notes:*  
+- **Internal Volume (L):** \(V = 0.02827 \times \text{Tube Length (cm)}\)  
+- **Optimal Water (L):** 42% of \(V\)  
+- **Dry Mass (kg):** \(0.385 + 0.00475 \times \text{Tube Length (cm)}\)  
+- **Total Mass (kg):** Dry mass + Optimal water (with 1 L water ≈ 1 kg)  
+- **Effective Exit Velocity:** \(v_e = 17.68 \sqrt{P}\) (m/s)  
+  • At 4 bar: 35.36 m/s; at 6 bar: 43.31 m/s; at 8 bar: 50.00 m/s; at 10 bar: 55.93 m/s  
+- **Thrust Duration \(T\) (s):**  
+  \(T = \frac{\text{Optimal Water (m³)}}{A \times v_e}\)  
+  (Nozzle area \(A \approx 7.85 \times 10^{-5}\,m^2\); note: water volume in m³ = Optimal water [L] ÷ 1000)  
+- **Δv (m/s):** \(v_e \times \ln\left(\frac{m_{\rm total}}{m_{\rm dry}}\right)\)  
+- **Burnout Speed (m/s):** \(v_{\rm burn} = \Delta v - \tfrac{1}{2}\,g\,T\) (with \(g=9.81\,m/s^2\))  
+- **Maximum Altitude (m):** \(h \approx \frac{{v_{\rm burn}}^2}{2g} + \frac{1}{2}\,v_{\rm burn}\,T\)  
+- **Flight Duration (s):** \(T + 2\left(\frac{v_{\rm burn}}{g}\right)\)  
+- **Impact Speed (m/s):** Assumed approximately equal to \(v_{\rm burn}\)
 
-- **Recommended Water Fill:**  
-  Approximately 42% of the internal volume is used as water.
-  
-- **Dry Mass (kg):**  
-  Consists of a fixed payload of 0.385 kg plus a tube mass that scales linearly (0.00475 kg per cm).  
-  For example, a 100 cm tube:  
-  Dry mass ≈ \(0.385 + 0.00475 \times 100 = 0.86\,kg\).
-  
-- **Total Mass (kg):**  
-  Dry mass plus water mass (1 L water ≈ 1 kg).
+For each tube length, the four values in square-bracketed columns are listed in the order: **4 bar / 6 bar / 8 bar / 10 bar**.
 
-- **Effective Exit Velocity (\(v_e\)) (m/s):**  
-  \(v_e = 17.68 \sqrt{P}\)  
-  Where \(P\) is the operating pressure in bar.  
-  - 4 bar: \(v_e \approx 35.36\,m/s\)  
-  - 6 bar: \(v_e \approx 43.31\,m/s\)  
-  - 8 bar: \(v_e \approx 50.00\,m/s\)  
-  - 10 bar: \(v_e \approx 55.93\,m/s\)
-
-- **Thrust Duration (\(T\)) (s):**  
-  Calculated from the recommended water volume, nozzle area \(A \approx 7.85 \times 10^{-5}\,m^2\), and \(v_e\):
-  \[
-  T = \frac{\text{Water Volume (m³)}}{A \, v_e}
-  \]
-  
-- **Rocket Δv:**  
-  \(\Delta v = v_e \ln\!\left(\frac{m_{\text{total}}}{m_{\text{dry}}}\right)\)
-
-- **Burnout Velocity (\(v_{\rm burn}\)) (m/s):**  
-  \(v_{\rm burn} = \Delta v - \tfrac{1}{2}g\,T\) with \(g=9.81\,m/s^2\). This approximates the launch speed at the end of water thrust.
-  
-- **Estimated Maximum Altitude (\(h\)) (m):**  
-  Approximated as:
-  \[
-  h \approx \frac{v_{\rm burn}^2}{2g} + \frac{1}{2}v_{\rm burn}\,T
-  \]
-  
-- **Flight Duration (s):**  
-  Estimated as:
-  \[
-  \text{Flight Duration} \approx T + 2\left(\frac{v_{\rm burn}}{g}\right)
-  \]
-  
-- **Minimum Altitude (m):**  
-  As a pessimistic estimate, 90% of the calculated maximum altitude.
-
-*For a detailed “big matrix” covering various tube lengths (from 50 cm to 300 cm) and operating pressures (4, 6, 8, and 10 bar), please refer to the extended tables in the project documentation.*
+| Tube Length (cm) | Internal Volume (L) | Optimal Water (L) | Total Mass (kg) | Thrust Time \(T\) (s) [4/6/8/10] | Δv (m/s) [4/6/8/10] | Burnout Speed (m/s) [4/6/8/10] | Maximum Altitude (m) [4/6/8/10] | Flight Duration (s) [4/6/8/10] | Impact Speed (m/s) [4/6/8/10] |
+|------------------|---------------------|-------------------|-----------------|---------------------------------|---------------------|-------------------------------|---------------------------------|-------------------------------|------------------------------|
+| **75**           | 2.12                | 0.89              | 1.63            | 0.32 / 0.26 / 0.23 / 0.20         | 27.9 / 34.2 / 39.5 / 44.2  | 26.4 / 32.9 / 38.4 / 43.2      | 39.6 / 59.7 / 79.5 / 99.5        | 5.69 / 6.98 / 8.06 / 9.01      | 26.4 / 32.9 / 38.4 / 43.2       |
+| **100**          | 2.83                | 1.19              | 2.05            | 0.43 / 0.35 / 0.30 / 0.27         | 30.7 / 37.6 / 43.4 / 48.6  | 28.6 / 35.9 / 41.9 / 47.2      | 47.9 / 65.7 / 96.0 / 120.1       | 6.26 / 7.67 / 8.86 / 9.90      | 28.6 / 35.9 / 41.9 / 47.2       |
+| **125**          | 3.53                | 1.48              | 2.46            | 0.53 / 0.44 / 0.38 / 0.34         | 32.5 / 39.9 / 46.0 / 51.5  | 29.9 / 37.7 / 44.2 / 49.8      | 53.6 / 80.8 / 107.6 / 135.0      | 6.64 / 8.13 / 9.38 / 10.50     | 29.9 / 37.7 / 44.2 / 49.8       |
+| **150**          | 4.24                | 1.78              | 2.88            | 0.64 / 0.52 / 0.45 / 0.41         | 34.0 / 41.7 / 48.1 / 53.8  | 30.9 / 39.1 / 45.9 / 51.8      | 58.4 / 88.3 / 117.8 / 147.3      | 6.94 / 8.50 / 9.81 / 10.96     | 30.9 / 39.1 / 45.9 / 51.8       |
+| **175**          | 4.95                | 2.08              | 3.30            | 0.75 / 0.61 / 0.53 / 0.47         | 35.2 / 43.1 / 49.8 / 55.7  | 31.5 / 40.1 / 47.2 / 53.3      | 62.4 / 94.2 / 125.8 / 157.6      | 7.18 / 8.78 / 10.15 / 11.34    | 31.5 / 40.1 / 47.2 / 53.3       |
+| **200**          | 5.65                | 2.37              | 3.71            | 0.85 / 0.70 / 0.60 / 0.54         | 36.0 / 44.0 / 50.9 / 56.9  | 31.8 / 40.6 / 47.9 / 54.3      | 65.1 / 98.1 / 131.4 / 164.7      | 7.34 / 8.97 / 10.37 / 11.61    | 31.8 / 40.6 / 47.9 / 54.3       |
 
 ---
 
 ## Optimal Mix
 
-Based on our simplified models and performance estimates, the following recommendations provide a good balance between thrust, altitude, and practical build considerations:
+Based on the estimates above and practical design trade-offs, an optimal configuration for a 6 cm diameter water rocket appears to be:
 
-- **Water Fill:**  
-  A water fill of about **42%** of the tube's internal volume offers an optimal compromise. This fraction provides sufficient reaction mass without overly diminishing the available volume for compressed air.
+| **Parameter**             | **Recommended Value**                                          |
+|---------------------------|---------------------------------------------------------------|
+| **Tube Diameter**         | 6 cm                                                          |
+| **Tube Length**           | 150–200 cm                                                    |
+| **Water Fill Fraction**   | ~42% of the internal volume                                   |
+| **Operating Pressure**    | ~8 bar                                                        |
+| **Nozzle Diameter**       | ~10 mm (Gardena connector)                                    |
+| **Expected Burnout Speed**| ~46 m/s (for 150 cm at 8 bar); ~47–54 m/s for 200 cm at 8–10 bar  |
+| **Estimated Maximum Altitude** | ~118 m for 150 cm at 8 bar; ~131–165 m for 200 cm at 8–10 bar  |
+| **Flight Duration**       | ~9–10 s for 150 cm at 8 bar; ~10–11.6 s for 200 cm at 8–10 bar    |
+| **Impact Speed**          | Approximately equal to the burnout speed                      |
 
-- **Operating Pressure:**  
-  While operating at higher pressures (up to 10 bar) can yield higher exit velocities, the gains taper off compared to the increased structural demands. An operating pressure of around **8 bar** is recommended for a strong performance balanced with safety.
+*Summary Recommendation:* For a 6 cm diameter rocket, a body length of **150–200 cm**, filled to **42%** of its internal volume with water and operating at around **8 bar** (with a ~10 mm nozzle) is predicted to yield a strong balance between performance (altitude, thrust) and manageable mass and structural demands. Actual performance will depend on factors such as aerodynamic drag, seal quality, and material strength, so practical tests and iterative tuning are advised.
 
-- **Tube Length (Body Length):**  
-  Although longer tubes provide more volume for water, they also add to the dry mass and may complicate handling and stability. For a 6 cm diameter rocket:
-  - **150–200 cm** tube lengths appear to hit the sweet spot.  
-  They offer a sufficiently high internal volume (and thus impulse) while keeping the additional mass reasonable.
 
-- **Combined Optimal Configuration:**  
-  For a 6 cm diameter rocket, an optimal mix appears to be:
-  - **Body Length:** Approximately **150–200 cm**.
-  - **Water Fill:** **42%** of the internal volume.
-  - **Operating Pressure:** Around **8 bar**.
-  
-  With these parameters, our model estimates roughly:
-  - **Burnout velocity:** ~42–46 m/s.
-  - **Maximum Altitude:** ~95–120 m.
-  - **Flight Duration:** Around 8–10 s.
-  - **Minimum Altitude Estimate:** ~90% of the maximum altitude, offering a safety margin to account for real-world inefficiencies.
 
-These values provide a practical starting point. Experimentation and slight adjustments may be necessary to account for aerodynamic drag, seal imperfections, and material strength considerations.
+
+
 
 ---
 
