@@ -170,32 +170,101 @@ void initLEDColors() {
   orangeColor = strip.Wheel(40);   // AP Mode: Orange
 }
 
-// Displays a sequential LED pattern using the defined colors.
-void showLEDColorsSequentially() {
-  for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, redColor); strip.show(); delay(100); }
-  delay(500);
-  for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, purpleColor); strip.show(); delay(100); }
-  delay(500);
-  for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, blueColor); strip.show(); delay(100); }
-  delay(500);
+// Sets every LED on the strip to a single specified color.
+void setAllLEDs(uint32_t color) {
+  for (int i = 0; i < LEDS_COUNT; i++) {
+    strip.setLedColorData(i, color);
+  }
+  strip.show();
 }
 
-// Blinks the LED ring with a specified color a given number of times.
+// -----------------------
+// Rainbow Function
+// -----------------------
+// Displays a moving rainbow effect across the LED ring sequentially.
+// - 'wait' is the delay (in ms) after updating each LED.
+// - 'direction' controls the animation direction: 1 for clockwise, -1 for counter-clockwise.
+// - 'rotations' specifies the number of full cycles (default is 1 rotation, where 1 rotation = 256 steps).
+// After each full rotation the LEDs are reset (turned off).
+void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1) {
+  // Process each rotation (each rotation is 256 steps).
+  for (uint16_t r = 0; r < rotations; r++) {
+    // Loop through 256 steps for the current rotation.
+    for (uint16_t j = 0; j < 256; j++) {
+      // Sequentially update each LED.
+      for (uint16_t i = 0; i < LEDS_COUNT; i++) {
+        uint8_t wheelIndex = (((i * 256 / LEDS_COUNT) + (direction * j) + 256) % 256);
+        uint32_t color = strip.Wheel(wheelIndex);
+        strip.setLedColorData(i, color);
+        strip.show();
+        delay(wait);
+      }
+    }
+    // Reset the LED strip (set all LEDs off) after completing one rotation.
+    setAllLEDs(0);
+    delay(500);  // Optional delay between rotations.
+  }
+}
+
+// -----------------------
+// Sequential Color Function
+// -----------------------
+// Displays a sequential LED effect using a specified color.
+// Parameters:
+//   - 'color': The color to use.
+//   - 'direction': 1 to update forward (0 to LEDS_COUNT-1) or -1 for reverse.
+//   - 'rotations': The number of times to run the full sequential update (default is 1).
+// At the end of each sequence rotation, the LED strip is reset (turned off).
+void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t rotations = 1) {
+  for (uint16_t r = 0; r < rotations; r++) {
+    if (direction >= 0) {
+      // Forward update: 0 up to LEDS_COUNT - 1.
+      for (int i = 0; i < LEDS_COUNT; i++) {
+        strip.setLedColorData(i, color);
+        strip.show();
+        delay(100);
+      }
+    } else {
+      // Reverse update: LEDS_COUNT - 1 down to 0.
+      for (int i = LEDS_COUNT - 1; i >= 0; i--) {
+        strip.setLedColorData(i, color);
+        strip.show();
+        delay(100);
+      }
+    }
+    // Reset the strip after each complete rotation.
+    setAllLEDs(0);
+    delay(500);  // Optional pause before the next sequence rotation.
+  }
+}
+
+// -----------------------
+// Blink Color Function
+// -----------------------
+// Blinks the LED ring with a specific color.
+// - 'color': Color used for blinking.
+// - 'times': Number of blink cycles.
+// - 'delayms': Delay (in milliseconds) for each on/off state.
+// This function sets all LEDs to the specified color, waits, then resets them, and repeats.
 void blinkColor(uint32_t color, int times, int delayms) {
   for (int t = 0; t < times; t++) {
-    for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, color); }
-    strip.show();
+    setAllLEDs(color);
     delay(delayms);
-    for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, 0); }
-    strip.show();
+    setAllLEDs(0);
     delay(delayms);
   }
 }
 
+// -----------------------
+// End LED Helper Functions
+// -----------------------
+
+
+
 // Provides visual feedback on WiFi status using LEDs.
 void indicateWiFiStatus(bool connected) {
-  if (connected) { blinkColor(greenColor, 3, 250); }
-  else { blinkColor(orangeColor, 3, 250); }
+  if (connected) { blinkColor(greenColor, 5, 250); }
+  else { blinkColor(orangeColor, 5, 250); }
 }
 
 // -----------------------
@@ -281,13 +350,16 @@ void parachuteRelease() {
   appendFile(SD_MMC, "/log.txt", eventLog);
   for (int i = 0; i < 2; i++) {
     parachuteservo.write(180);
-    delay(200);
+    delay(50);
     parachuteservo.write(0);
   }
   parachuteStatus = "released";
   // Provide visual feedback using green LEDs after release.
   blinkColor(greenColor, 5, 250);
-  for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, greenColor); }
+  // To display the sequential effect with blue:
+  showLEDColorsSequentially(greenColor, -1, 5);
+    showLEDColorsSequentially(greenColor, 1, 5);
+    setAllLEDs(greenColor);
   strip.show();
 }
 
@@ -314,11 +386,13 @@ void parachuteArmed() {
   maxAltitudeDrop = 0;
   minAltitudeDrop = 1000000.0;
   // Actuate the servo to signal arming.
-  parachuteservo.write(0);
-  delay(200);
+  //parachuteservo.write(0);
+ // delay(50);
   parachuteservo.write(180);
   parachuteStatus = "armed";
-  for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, redColor); }
+showLEDColorsSequentially(redColor, 1, 3);
+setAllLEDs(redColor);
+
   strip.show();
 }
 
@@ -333,7 +407,9 @@ void calibrateSensors() {
     Serial.println("Parachute status updated to 'calibrating' due to sensor calibration.");
   }
   // Visual feedback for calibration: cycle through purple LED pattern.
-  for (int i = 0; i < LEDS_COUNT; i++) { strip.setLedColorData(i, purpleColor); strip.show(); delay(100); }
+//showRainbowCycle(20, -1, 3);  // 20ms delay, reverse direction, 3 rotations
+showLEDColorsSequentially(purpleColor, -1, 2);
+
   // Capture the current altitude as the new baseline.
   baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   baselineCaptured = true;
@@ -350,8 +426,10 @@ void calibrateSensors() {
   minAltitudeDrop = 1000000.0;
   Serial.print("Calibration complete. Baseline altitude: ");
   Serial.println(baselineAltitude);
-  // Provide additional LED feedback using purple color.
-  blinkColor(purpleColor, 5, 250);
+//showRainbowCycle(20, 1, 3);  // 20ms delay, reverse direction, 3 rotations
+showLEDColorsSequentially(purpleColor, 1, 2);
+
+
 }
 
 // -----------------------
@@ -363,9 +441,12 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
       Serial.println("Client " + String(num) + " disconnected");
+        blinkColor(redColor, 4, 300);
       break;
     case WStype_CONNECTED:
       Serial.println("Client " + String(num) + " connected");
+      blinkColor(greenColor, 4, 300);
+
       break;
     case WStype_TEXT: {
       StaticJsonDocument<200> doc;
@@ -574,15 +655,14 @@ void setup() {
   initLEDColors(); 
   Serial.println("LED Colors Initialized");
   delay(1000);
-  showLEDColorsSequentially(); 
+  showLEDColorsSequentially(purpleColor,1 ,3); 
   Serial.println("Sequential Display Done");
   delay(1000);
 
   Serial.println("Setup complete.");
   indicateWiFiStatus(WiFi.status() == WL_CONNECTED);
-  for (int i = 0; i < LEDS_COUNT; i++) { 
-    strip.setLedColorData(i, blueColor); 
-  }
+setAllLEDs(blueColor);
+
   strip.show();
 
   server.on("/", []() { server.send(200, "text/html", webpage); });
