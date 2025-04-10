@@ -16,14 +16,13 @@ The ESP Controlled Rocket repository is a comprehensive project that brings toge
 - [Assembly & Build](#assembly--build)
 - [Usage](#usage)
 - [Rocket Performance Calculations](#rocket-performance-calculations)
-- [Optimal Mix](#optimal-mix)
 - [Contributing](#contributing)
 
 ---
 
 ## Introduction
 
-The **ESP Controlled Rocket** project combines state-of-the-art embedded firmware with ready-to-print 3D designs to create a complete rocket system. The flight computer manages sensor data, logs flight events, and controls the parachute deployment mechanism while also featuring camera integration for real-time image capture and timelapse functionality.
+The **ESP Controlled Rocket** project combines state-of-the-art embedded firmware with ready-to-print 3D designs to create a complete rocket system. The flight computer manages sensor data, logs flight events, and controls the parachute deployment mechanism while providing real-time telemetry via a web interface. New additions include status indication via RGB LED effects and a manual release function accessible from the web interface.
 
 ---
 
@@ -35,33 +34,38 @@ The **ESP Controlled Rocket** project combines state-of-the-art embedded firmwar
   - **BMP280 Sensor:** Reads temperature, pressure, and computes altitude.
   - **MPU6050 Sensor:** Provides accelerometer, gyroscope, and sensor temperature data.
 - **Real-Time Telemetry:**  
-  - A web server with WebSocket support streams live flight data including altitude, temperature, and inertial measurements.
+  - A web server with WebSocket support streams live flight data including altitude, temperature, inertial measurements, and parachute status.
 - **Parachute Deployment:**  
-  - Monitors altitude drop to trigger the servo-controlled parachute release.
+  - Monitors a corrected altitude drop calculation to trigger the servo-controlled parachute release automatically.
+  - Includes a manual release function via the web interface for testing.
 - **Enhanced SD Card Logging:**  
-  - Logs flight data, captured images, and detailed debug information.
-- **Camera Integration & Timelapse Imaging:**  
-  - Supports high-resolution image capture via an integrated camera module.
-  - Offers timelapse mode to capture images at regular intervals.
-- **Debug & Serial Output:**  
-  - Improved debug options allow for granular monitoring of sensor data, camera operations, and timelapse events.
+  - Logs flight data and key events with accurate timestamps.
+- **RGB LED Status Indicators:**  
+  - An LED ring provides visual feedback for network connectivity, parachute arming, and release states.
 - **WiFi Connectivity & OTA Updates:**  
-  - Automatically connects to a predefined network or sets up an access point.
+  - Connects to a predefined network or automatically sets up an access point.
   - Supports remote firmware updates through an HTTP OTA endpoint.
 - **Time Synchronization:**  
   - Uses NTP to provide accurate timestamps for logging.
 
 ### Code Overview
 
-The flight computer firmware is organized into modules that handle sensor management, camera initialization, data processing, SD card logging, web communication, and OTA updates. New functions include `cameraSetup()`, `captureAndSavePicture()`, and timelapse controls integrated into both the firmware and the web interface.
+The flight computer firmware is organized into modules that handle:
+- **Sensor Management:** Initialization and continuous reading of the BMP280 and MPU6050 sensors.
+- **Data Processing:** Calculation of absolute altitude, relative altitude (with baseline captured at arming), and a corrected altitude drop.
+- **Parachute Control:** Both automatic deployment (triggered by an altitude drop exceeding a threshold) and manual release via a web interface.
+- **LED Status Indicators:** Control of an RGB LED ring that reflects current system and network status.
+- **Communication:** A lightweight web server and WebSocket system that broadcast real-time flight data.
+- **Logging:** Timestamped recording of flight events and sensor readings on an SD card.
+- **OTA Updates:** Remote firmware update functionality via HTTP OTA and mDNS service.
 
 ### Flight Computer Screenshot
 
-![Flight Computer Screenshot](media/flight_computer_dashboard_5.png)
+![Flight Computer Screenshot](media/flight_computer_dashboard_4.png)
 
 ---
 
-## 3D Designs
+## 3D Designs - COMMING SOON
 
 The repository includes 3D printing designs for the rocket's structure and components. The models are optimized for easy printing and assembly.
 
@@ -82,7 +86,7 @@ Detailed 3D model files (.STL) and assembly instructions can be found in the [3d
 
 ## Assembly & Build
 
-For detailed build instructions, refer to the [Assembly Guide](docs/assembly_guide.md). The guide covers component assembly, wiring, and final system integration including the new camera and timelapse wiring.
+For detailed build instructions, refer to the [Assembly Guide](docs/assembly_guide.md). The guide covers component assembly, wiring, and final system integration including wiring for the new RGB LED indicators and updated parachute control.
 
 ---
 
@@ -92,46 +96,25 @@ For detailed build instructions, refer to the [Assembly Guide](docs/assembly_gui
 
 1. **WiFi Configuration:**  
    Update the network credentials in the firmware.  
-   *Note: WiFi configuration code is omitted here for security reasons.*  
-   If the connection fails, the device will switch to access point mode.
+   *Note: The WiFi configuration code has been omitted from this document for security reasons.*  
+   If the connection fails, the device will switch to access point mode and indicate its status via LED blinks.
 
-2. **OTA Updates**  
+2. **OTA Updates:**  
    Access the OTA update page by navigating to [http://esp32-webupdate.local/update](http://esp32-webupdate.local/update) once the device is connected to WiFi.
 
-3. **Running the Code**  
+3. **Manual Parachute Release:**  
+   The web dashboard now includes two buttons:
+   - **Arm Parachute:** Arms the parachute and sets the baseline altitude.
+   - **Release Parachute:** Immediately triggers the parachute release for testing.
+
+4. **Running the Code:**  
    Compile and upload the code to your ESP32 using the Arduino IDE or PlatformIO.
 
-### Debugging and Logging Variables
+### Debugging and Logging
 
-The firmware includes several variables that control debugging output and logging behavior. These variables can be adjusted to fine-tune what information is output to the serial console or logged to the SD card:
-
-- **enableSensorSerialLog (default: true):**  
-  Master toggle for sensor serial logging. When enabled, sensor readings and key events are printed to the serial monitor for debugging.
-- **logBMP280Data (default: false):**  
-  Controls logging of BMP280 sensor data (temperature, pressure, altitude).
-- **logMPU6050Data (default: false):**  
-  Controls logging of MPU6050 sensor data (accelerometer, gyroscope, temperature).
-- **logSpaceUsage (default: true):**  
-  Toggles logging of SD card space usage (total and used).
-- **showCameraOutput (default: true):**  
-  Enables camera initialization and picture capture debug messages.
-- **showTimelapseOutput (default: true):**  
-  Enables timelapse operation debug messages.
-- **showSensorInitLog (default: true):**  
-  Controls sensor initialization messages on the serial monitor.
-- **cameraEnabled (default: true):**  
-  Determines if the camera functionality is active.
-- **timelapseActive (default: false):**  
-  Indicates whether timelapse image capture is active (controlled via the web interface).
-
-### Monitoring Flight Data
-
-- Access the live telemetry dashboard via any web browser.
-- The dashboard displays real-time flight data, including altitude, temperature, inertial measurements, camera status, and timelapse mode.
-- Use the provided buttons to arm the parachute and start/stop timelapse image capture.
+The firmware includes various configuration options to control debugging output and logging behavior, such as sensor logs, SD card logging, and LED status indications.
 
 ---
-
 ## Rocket Performance Calculations
 
 The performance of a water- and air-powered rocket depends on several design and operating parameters. For this project, we assume:
