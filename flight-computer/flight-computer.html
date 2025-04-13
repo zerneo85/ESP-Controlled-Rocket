@@ -5,7 +5,8 @@
     <meta name='viewport' content='width=device-width,initial-scale=1'>
     <title>Flight Computer</title>
     <style>
-        body {
+        
+body {
             background-color: #EEEEEE;
             font-family: Arial, sans-serif;
             color: #003366;
@@ -13,12 +14,14 @@
             padding: 20px
         }
 
-        h1 {
+        
+h1 {
             text-align: center;
             margin-bottom: 20px
         }
 
-        .data-table {
+        
+.data-table {
             margin: 0 auto;
             border-collapse: collapse;
             width: 90%;
@@ -27,28 +30,33 @@
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1)
         }
 
-        .data-table th,
+        
+.data-table th,
         .data-table td {
             padding: 12px 15px;
             border: 1px solid #CCC;
             text-align: left
         }
 
-        .data-table th {
+        
+.data-table th {
             background-color: #003366;
             color: #FFF
         }
 
-        .data-table tr:nth-child(even) {
+        
+.data-table tr:nth-child(even) {
             background-color: #F9F9F9
         }
 
-        .button-container {
+        
+.button-container {
             text-align: center;
             margin-top: 20px
         }
 
-        button {
+        
+button {
             background-color: #003366;
             color: #FFF;
             border: none;
@@ -57,9 +65,22 @@
             cursor: pointer
         }
 
-        button:hover {
+        
+button:hover {
             background-color: #0055AA
         }
+
+        
+input[type='number'],
+        select {
+            padding: 8px;
+            font-size: 16px;
+            width: 150px;
+            margin-right: 10px;
+            margin-top: 5px
+        }
+
+        
     </style>
 </head>
 
@@ -95,8 +116,16 @@
             <td id='MPU6050Temp'>-</td>
         </tr>
         <tr>
-            <td>Accelerometer</td>
-            <td id='Accelerometer'>-</td>
+            <td>Acc X</td>
+            <td id='AccX'>-</td>
+        </tr>
+        <tr>
+            <td>Acc Y</td>
+            <td id='AccY'>-</td>
+        </tr>
+        <tr>
+            <td>Acc Z</td>
+            <td id='AccZ'>-</td>
         </tr>
         <tr>
             <td>Gyroscope</td>
@@ -135,16 +164,32 @@
             <td id='MinRelAltitude'>-</td>
         </tr>
         <tr>
-            <td>Max Altitude Drop</td>
+            <td>Max Alt Drop</td>
             <td id='MaxAltDrop'>-</td>
         </tr>
         <tr>
-            <td>Min Altitude Drop</td>
+            <td>Min Alt Drop</td>
             <td id='MinAltDrop'>-</td>
         </tr>
         <tr>
-            <td>Parachute Release Threshold</td>
+            <td>Altitude Drop Threshold</td>
             <td id='AltDropThreshold'>-</td>
+        </tr>
+        <tr>
+            <td>Acc X Threshold</td>
+            <td id='AccXThreshold'>-</td>
+        </tr>
+        <tr>
+            <td>Acc Y Threshold</td>
+            <td id='AccYThreshold'>-</td>
+        </tr>
+        <tr>
+            <td>Acc Z Threshold</td>
+            <td id='AccZThreshold'>-</td>
+        </tr>
+        <tr>
+            <td>Trigger Logic</td>
+            <td id='TriggerLogic'>-</td>
         </tr>
         <tr>
             <td>Total Space (MB)</td>
@@ -155,34 +200,115 @@
             <td id='UsedSpace'>-</td>
         </tr>
     </table>
-    <div class='button-container'><button type='button' id='BTN_SEND_BACK'>Arm Parachute</button> <button type='button' id='BTN_RELEASE'>Release Parachute</button></div>
+    <div class='button-container'>
+        <button type='button' id='BTN_ARM' onclick="button_arm()">Arm Parachute</button> 
+        <button type='button' id='BTN_RELEASE' onclick="button_release()">Release Parachute</button> 
+        <button type='button' id='BTN_CALIBRATE' onclick="button_calibrate()">Calibrate Sensors</button>
+    </div>
+    <div class='button-container'>
+        <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'><br>
+        <input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'><br>
+        <input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'><br>
+        <input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'><br>
+        <select id='triggerLogic'>
+            <option value='OR'>OR</option>
+            <option value='AND'>AND</option>
+        </select><br>
+        <button type='button' id='BTN_UPDATE_TRIGGERS' onclick="button_update_triggers()">Update Triggers</button>
+    </div>
+    <div class='button-container'>
+        <button type='button' id='BTN_OTA' onclick="window.open('/update','_blank')">OTA Upgrade</button> 
+        <button type='button' id='BTN_FILES' onclick="window.open('/files','_blank')">Files</button> 
+        <button type='button' id='BTN_VIS' onclick="window.open('/visualization/visualization.html','_blank')">Visualization</button>
+    </div>
     <script>
+        
         var Socket;
-        document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
-        document.getElementById('BTN_RELEASE').addEventListener('click', button_release);
-
         function init() {
+            
             Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
             Socket.onmessage = function(event) {
+                
                 processCommand(event);
             };
         }
-
-        function button_send_back() {
+        function button_arm() {
+            
             var msg = {
                 parachute: 'Armed'
             };
             Socket.send(JSON.stringify(msg));
         }
-
         function button_release() {
+            
             var msg = {
                 parachute: 'Released'
             };
             Socket.send(JSON.stringify(msg));
         }
-
+        function button_update_triggers() {
+            
+            var altVal = parseFloat(document.getElementById('newAltThreshold').value);
+            var accXVal = parseFloat(document.getElementById('newAccX').value);
+            var accYVal = parseFloat(document.getElementById('newAccY').value);
+            var accZVal = parseFloat(document.getElementById('newAccZ').value);
+            var logicVal = document.getElementById('triggerLogic').value;
+            var msg = {
+                newThreshold: altVal,
+                newAccX: accXVal,
+                newAccY: accYVal,
+                newAccZ: accZVal,
+                newTriggerLogic: logicVal
+            };
+            Socket.send(JSON.stringify(msg));
+        }
+        function button_calibrate() {
+            
+            var msg = {
+                calibrateSensors: true
+            };
+            Socket.send(JSON.stringify(msg));
+        }
+        function deleteFile(filename) {
+            
+            if (confirm('Are you sure you want to delete ' + filename + '?')) {
+                
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', '/deleteFile?name=' + encodeURIComponent(filename), true);
+                xhr.onload = function() {
+                    
+                    if (xhr.status == 200) {
+                        
+                        location.reload();
+                    } else {
+                        
+                        alert('Deletion failed: ' + xhr.statusText);
+                    }
+                };
+                xhr.send();
+            }
+        }
+        function deleteAllLogs() {
+            
+            if (confirm('Delete all log files?')) {
+                
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', '/deleteAllLogs', true);
+                xhr.onload = function() {
+                    
+                    if (xhr.status == 200) {
+                        
+                        location.reload();
+                    } else {
+                        
+                        alert('Deletion failed: ' + xhr.statusText);
+                    }
+                };
+                xhr.send();
+            }
+        }
         function processCommand(event) {
+            
             var obj = JSON.parse(event.data);
             document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-';
             document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-';
@@ -190,7 +316,9 @@
             document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-';
             document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-';
             document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-';
-            document.getElementById('Accelerometer').innerHTML = obj.Accelerometer || '-';
+            document.getElementById('AccX').innerHTML = obj.AccX || '-';
+            document.getElementById('AccY').innerHTML = obj.AccY || '-';
+            document.getElementById('AccZ').innerHTML = obj.AccZ || '-';
             document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-';
             document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-';
             document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-';
@@ -203,12 +331,16 @@
             document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop || '-';
             document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop || '-';
             document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold || '-';
+            document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold || '-';
+            document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold || '-';
+            document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold || '-';
+            document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic || '-';
             document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';
             document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';
         }
         window.onload = function(event) {
             init();
-        }
+        };
     </script>
 </body>
 

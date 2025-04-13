@@ -1,18 +1,12 @@
 /*
- * Flight Computer Firmware for ESP32 - Integrated, Corrected & Enhanced Version (V3.2.3)
+ * Flight Computer Firmware for ESP32 - Integrated, Corrected & Enhanced Version (V3.2.4)
  *
- * Summary of New Features:
- * - Visualization subpage is now served as a static file from SPIFFS.
- *   (Upload your visualization HTML, JS, and CSS under "/visualization/visualization.html" to SPIFFS.)
- * - File Manager now includes extra buttons ("Upload Files" and "Delete All Logs").
- *   The "Delete All Logs" endpoint deletes all log files (.csv and .txt) except the active log ("/log.csv").
- * - New endpoint (/fs) is added to list all files and folders from the SPIFFS filesystem.
- * - Retains sensor endpoints (/gyro, /acc, /temp, resets) and OTA update functionality.
- * - Main UI page remains a compressed one-liner with additional buttons (including "Visualization").
- * 
- * NOTE: This integrated version removes duplicate asynchronous server declarations from the FEATURE CODE.
- *       The firmware now uses a single, synchronous WebServer (and WebSocketsServer for real‐time sensor data),
- *       and file upload endpoints (SPIFFS) are handled synchronously.
+ * New Features:
+ *  - Combined File Manager: Lists both SD_MMC files (e.g. logs) and SPIFFS files (uploaded files).
+ *  - The file manager’s delete buttons now use AJAX so that deletion occurs without navigating away.
+ *  - “Delete All Logs” endpoint now collects all log file names and deletes them reliably.
+ *  - The file upload form includes an input (targetFolder) where you can set the folder for the upload.
+ *  - The main UI includes a "Visualization" button that points to your visualization files in SPIFFS.
  */
 
 // -----------------------
@@ -36,35 +30,25 @@ extern "C" {
 }
 #include <WiFiUdp.h>
 #include <NTPClient.h>
-#include <WebServer.h>          // Synchronous WebServer used for endpoints
-#include <WebSocketsServer.h>   // For real-time sensor data via WebSockets
+#include <WebServer.h>
+#include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <Arduino_ESP32_OTA.h>
 #include <HTTPUpdateServer.h>
 #include <ESPmDNS.h>
 #include <EEPROM.h>
-
-#include <SPIFFS.h>             // For file upload & static file serving (visualization & fs browser)
+#include <SPIFFS.h>        // For file upload & static file serving
 #include <math.h>
 #include <vector>
-
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-
-
-
-
-
-
 
 // -----------------------
 // LED Circle Setup using Freenove_WS2812 Library
 // -----------------------
 #include "Freenove_WS2812_Lib_for_ESP32.h"
-#define LEDS_COUNT 12       // Number of LEDs in the ring
-#define LEDS_PIN 17         // GPIO pin for LED data
-#define CHANNEL 0           // LED channel
+#define LEDS_COUNT 12       
+#define LEDS_PIN 17         
+#define CHANNEL 0           
 Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
 
 // -----------------------
@@ -73,13 +57,13 @@ Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNE
 #define EEPROM_SIZE 10
 #define EEPROM_PRESSURE_ADDR 0
 
-// SD card storage variables
-uint64_t totalSpace;     // Total SD card space (in MB)
-uint64_t usedSpace;      // Used SD card space (in MB)
+// SD card storage variables (logs)
+uint64_t totalSpace;     
+uint64_t usedSpace;      
 
 // Pressure variables
 String PressureSource = "";
-float lastLocalPressure = 1026.0;  // Default sea-level pressure (hPa)
+float lastLocalPressure = 1026.0;  
 bool apiPressureUpdated = false;
 bool showSensorInitLog = true;
 bool bmpFound = false;
@@ -92,7 +76,7 @@ const char* apSSID = "RocketAP";
 const char* apPassword = "Rocket2022!";
 
 // OpenWeatherMap API settings
-const char* openWeatherMapApiKey = "API_KEY";
+const char* openWeatherMapApiKey = "c4ce633939401d9ab8e15520865e416b";
 float currentLatitude = 52.03323004349591;
 float currentLongitude = 4.36483383178711;
 const char* owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
@@ -109,16 +93,16 @@ unsigned long lastSyncMillis = 0;
 // -----------------------
 // Trigger & Calibration Variables
 // -----------------------
-float altitudeDropThreshold = 0.8; // Altitude drop trigger threshold
-float accXThreshold = 15.0;        // Accelerometer X threshold
-float accYThreshold = 15.0;        // Accelerometer Y threshold
-float accZThreshold = 15.0;        // Accelerometer Z threshold
-bool useAndLogic = false;          // Trigger logic: false = OR, true = AND
+float altitudeDropThreshold = 0.8; 
+float accXThreshold = 15.0;        
+float accYThreshold = 15.0;        
+float accZThreshold = 15.0;        
+bool useAndLogic = false;          
 
 // Baseline & Parachute Variables
 float baselineAltitude = 0;
 bool baselineCaptured = false;
-String parachuteStatus = "unarmed";  // ("unarmed", "armed", "released", "calibrating")
+String parachuteStatus = "unarmed";  
 String parachutePreStatus = "unknown";
 
 // Logging Extremes
@@ -149,13 +133,12 @@ int servoPin = 14;
 // -----------------------
 // Web Server & OTA Instances
 // -----------------------
-// Use a single synchronous WebServer (from MAIN CODE)
 WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 HTTPUpdateServer httpUpdater;
 
 // -----------------------
-// I2C Bus & SD_MMC Pin Definitions (for both sensor and SD_MMC)
+// I2C Bus & SD_MMC Pin Definitions
 // -----------------------
 #define SDA_1 42
 #define SCL_1 37
@@ -164,51 +147,157 @@ HTTPUpdateServer httpUpdater;
 #define SD_MMC_D0 40
 
 // -----------------------
-// NEW FEATURE CODE VARIABLES (Integrated)
+// NEW FEATURE CODE GLOBALS
 // -----------------------
-// Integrated gyroscope reading variables (with accumulation)
 float gyroX = 0.0, gyroY = 0.0, gyroZ = 0.0;
-// Gyro threshold values for update accumulation (from FEATURE CODE)
 const float gyroXerror = 0.07;
 const float gyroYerror = 0.03;
 const float gyroZerror = 0.01;
-
-// Global file handle for file uploads (using SPIFFS)
-File uploadFile;
-
-// --- ADD this near your other global declarations ---
-File sdUploadFile;
+File uploadFile; // SPIFFS upload handle
 
 
-// NOTE: The duplicate AsyncWebServer and AsyncEventSource declarations from the FEATURE CODE
-// have been removed in favor of using the synchronous server (see above).
 
-// -----------------------
-// HTML form for file upload (compressed one-liner version)
-// -----------------------
-const char upload_form[] PROGMEM = R"rawliteral(<!DOCTYPE HTML><html><head><title>ESP32 File Upload</title><meta name='viewport' content='width=device-width, initial-scale=1'></head><body><h2>Upload File to SPIFFS</h2><form method='POST' action='/upload' enctype='multipart/form-data'><input type='file' name='upload'><input type='submit' value='Upload'></form></body></html>)rawliteral";
+// -------------------------
+// Main Web Page String (updated with Files button)
+// -------------------------
+String webpage = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+  "<title>Flight Computer</title>"
+  "<style>body{background-color:#EEEEEE;font-family:Arial,sans-serif;color:#003366;margin:0;padding:20px}"
+  "h1{text-align:center;margin-bottom:20px}"
+  ".data-table{margin:0 auto;border-collapse:collapse;width:90%;max-width:600px;background-color:#FFF;"
+  "box-shadow:0 0 10px rgba(0,0,0,0.1)}"
+  ".data-table th,.data-table td{padding:12px 15px;border:1px solid #CCC;text-align:left}"
+  ".data-table th{background-color:#003366;color:#FFF}"
+  ".data-table tr:nth-child(even){background-color:#F9F9F9}"
+  ".button-container{text-align:center;margin-top:20px}"
+  "button{background-color:#003366;color:#FFF;border:none;padding:10px 20px;font-size:16px;cursor:pointer}"
+  "button:hover{background-color:#0055AA}"
+  "input[type='number'],select{padding:8px;font-size:16px;width:150px;margin-right:10px;margin-top:5px}"
+  "</style></head><body>"
+  "<h1>Flight Information</h1>"
+  "<table class='data-table'>"
+  "<tr><th>Parameter</th><th>Value</th></tr>"
+  "<tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>"
+  "<tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr>"
+  "<tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr>"
+  "<tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr>"
+  "<tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr>"
+  "<tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr>"
+  "<tr><td>Acc X</td><td id='AccX'>-</td></tr>"
+  "<tr><td>Acc Y</td><td id='AccY'>-</td></tr>"
+  "<tr><td>Acc Z</td><td id='AccZ'>-</td></tr>"
+  "<tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr>"
+  "<tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr>"
+  "<tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr>"
+  "<tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr>"
+  "<tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr>"
+  "<tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr>"
+  "<tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr>"
+  "<tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr>"
+  "<tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr>"
+  "<tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr>"
+  "<tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr>"
+  "<tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr>"
+  "<tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>"
+  "<tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>"
+  "<tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>"
+  "<tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>"
+  "<tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>"
+  "<tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>"
+  "</table>"
+  "<div class='button-container'>"
+  "<button type='button' id='BTN_ARM' onclick=\"button_arm()\">Arm Parachute</button> "
+  "<button type='button' id='BTN_RELEASE' onclick=\"button_release()\">Release Parachute</button> "
+  "<button type='button' id='BTN_CALIBRATE' onclick=\"button_calibrate()\">Calibrate Sensors</button>"
+  "</div>"
+  "<div class='button-container'>"
+  "<input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'><br>"
+  "<input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'><br>"
+  "<input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'><br>"
+  "<input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'><br>"
+  "<select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select><br>"
+  "<button type='button' id='BTN_UPDATE_TRIGGERS' onclick=\"button_update_triggers()\">Update Triggers</button>"
+  "</div>"
+  "<div class='button-container'>"
+  "<button type='button' id='BTN_OTA' onclick=\"window.open('/update','_blank')\">OTA Upgrade</button> "
+  "<button type='button' id='BTN_FILES' onclick=\"window.open('/files','_blank')\">Files</button> "
+  "<button type='button' id='BTN_VIS' onclick=\"window.open('/visualization/index.html','_blank')\">Visualization</button>"
+  "</div>"
+  "<script>"
+  "var Socket;"
+  "function init(){"
+  "  Socket = new WebSocket('ws://' + window.location.hostname + ':81/');"
+  "  Socket.onmessage = function(event){ processCommand(event); };"
+  "}"
+  "function button_arm(){ var msg = { parachute: 'Armed' }; Socket.send(JSON.stringify(msg)); }"
+  "function button_release(){ var msg = { parachute: 'Released' }; Socket.send(JSON.stringify(msg)); }"
+  "function button_update_triggers(){"
+  "  var altVal = parseFloat(document.getElementById('newAltThreshold').value);"
+  "  var accXVal = parseFloat(document.getElementById('newAccX').value);"
+  "  var accYVal = parseFloat(document.getElementById('newAccY').value);"
+  "  var accZVal = parseFloat(document.getElementById('newAccZ').value);"
+  "  var logicVal = document.getElementById('triggerLogic').value;"
+  "  var msg = { newThreshold: altVal, newAccX: accXVal, newAccY: accYVal, newAccZ: accZVal, newTriggerLogic: logicVal };"
+  "  Socket.send(JSON.stringify(msg));"
+  "}"
+  "function button_calibrate(){ var msg = { calibrateSensors: true }; Socket.send(JSON.stringify(msg)); }"
+  "function deleteFile(filename){"
+  "  if(confirm('Are you sure you want to delete ' + filename + '?')){"
+  "    var xhr = new XMLHttpRequest();"
+  "    xhr.open('GET','/deleteFile?name=' + encodeURIComponent(filename),true);"
+  "    xhr.onload = function(){ if(xhr.status==200){ location.reload(); } else { alert('Deletion failed: ' + xhr.statusText); } };"
+  "    xhr.send();"
+  "  }"
+  "}"
+  "function processCommand(event){"
+  "  var obj = JSON.parse(event.data);"
+  "  document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-';"
+  "  document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-';"
+  "  document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-';"
+  "  document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-';"
+  "  document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-';"
+  "  document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-';"
+  "  document.getElementById('AccX').innerHTML = obj.AccX || '-';"
+  "  document.getElementById('AccY').innerHTML = obj.AccY || '-';"
+  "  document.getElementById('AccZ').innerHTML = obj.AccZ || '-';"
+  "  document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-';"
+  "  document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-';"
+  "  document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-';"
+  "  document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-';"
+  "  document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-';"
+  "  document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-';"
+  "  document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-';"
+  "  document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-';"
+  "  document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';"
+  "  document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop || '-';"
+  "  document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop || '-';"
+  "  document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold || '-';"
+  "  document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold || '-';"
+  "  document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold || '-';"
+  "  document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold || '-';"
+  "  document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic || '-';"
+  "  document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';"
+  "  document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';"
+  "}"
+  "window.onload = function(event){ init(); };"
+  "</script>"
+  "</body></html>";
 
-// -----------------------
-// Main UI Web Page (One-liner compressed)
-// -----------------------
-String webpage = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>Flight Computer</title><style>body{background-color:#EEEEEE;font-family:Arial,sans-serif;color:#003366;margin:0;padding:20px}h1{text-align:center;margin-bottom:20px}.data-table{margin:0 auto;border-collapse:collapse;width:90%;max-width:600px;background-color:#FFF;box-shadow:0 0 10px rgba(0,0,0,0.1)}.data-table th,.data-table td{padding:12px 15px;border:1px solid #CCC;text-align:left}.data-table th{background-color:#003366;color:#FFF}.data-table tr:nth-child(even){background-color:#F9F9F9}.button-container{text-align:center;margin-top:20px}button{background-color:#003366;color:#FFF;border:none;padding:10px 20px;font-size:16px;cursor:pointer}button:hover{background-color:#0055AA}input[type='number'],select{padding:8px;font-size:16px;width:150px;margin-right:10px;margin-top:5px}</style></head><body><h1>Flight Information</h1><table class='data-table'><tr><th>Parameter</th><th>Value</th></tr><tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr><tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr><tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr><tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr><tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr><tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr><tr><td>Acc X</td><td id='AccX'>-</td></tr><tr><td>Acc Y</td><td id='AccY'>-</td></tr><tr><td>Acc Z</td><td id='AccZ'>-</td></tr><tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr><tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr><tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr><tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr><tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr><tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr><tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr><tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr><tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr><tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr><tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr><tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr><tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr><tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr><tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr><tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr><tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr><tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr></table><div class='button-container'><button type='button' id='BTN_ARM'>Arm Parachute</button> <button type='button' id='BTN_RELEASE'>Release Parachute</button> <button type='button' id='BTN_CALIBRATE'>Calibrate Sensors</button></div><div class='button-container'><input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'><br><input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'><br><input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'><br><input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'><br><select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select><br><button type='button' id='BTN_UPDATE_TRIGGERS'>Update Triggers</button></div><div class='button-container'><button type='button' id='BTN_OTA' onclick=\'window.open('/update','_blank')\'>OTA Upgrade</button> <button type='button' id='BTN_FILES' onclick=\'window.open('/files','_blank')\'>Files</button> <button type='button' id='BTN_VIS' onclick=\'window.open('/visualization','_blank')\'>Visualization</button></div><script>var Socket; function init(){ Socket = new WebSocket('ws://'+window.location.hostname+':81/'); Socket.onmessage = function(event){ var obj = JSON.parse(event.data); document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-'; document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-'; document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-'; document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-'; document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-'; document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-'; document.getElementById('AccX').innerHTML = obj.AccX || '-'; document.getElementById('AccY').innerHTML = obj.AccY || '-'; document.getElementById('AccZ').innerHTML = obj.AccZ || '-'; document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-'; document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-'; document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-'; document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-'; document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-'; document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-'; document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-'; document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-'; document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-'; document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop || '-'; document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop || '-'; document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold || '-'; document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold || '-'; document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold || '-'; document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold || '-'; document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic || '-'; document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-'; document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-'; }; document.getElementById('BTN_ARM').addEventListener('click', button_arm); document.getElementById('BTN_RELEASE').addEventListener('click', button_release); document.getElementById('BTN_CALIBRATE').addEventListener('click', button_calibrate); document.getElementById('BTN_UPDATE_TRIGGERS').addEventListener('click', button_update_triggers); } function button_arm(){ var msg = { parachute:'Armed' }; Socket.send(JSON.stringify(msg)); } function button_release(){ var msg = { parachute:'Released' }; Socket.send(JSON.stringify(msg)); } function button_update_triggers(){ var altVal = parseFloat(document.getElementById('newAltThreshold').value); var accXVal = parseFloat(document.getElementById('newAccX').value); var accYVal = parseFloat(document.getElementById('newAccY').value); var accZVal = parseFloat(document.getElementById('newAccZ').value); var logicVal = document.getElementById('triggerLogic').value; var msg = { newThreshold: altVal, newAccX: accXVal, newAccY: accYVal, newAccZ: accZVal, newTriggerLogic: logicVal }; Socket.send(JSON.stringify(msg)); } function button_calibrate(){ var msg = { calibrateSensors: true }; Socket.send(JSON.stringify(msg)); } window.onload = function(){ init(); }; </script></body></html>)";
+
 
 // -----------------------
 // NEW FEATURE: Sensor Reading Functions (with Axis Correction)
 // -----------------------
-
-// getGyroReadings() returns a JSON string with the accumulated and corrected gyroscope readings.
 String getGyroReadings() {
   sensors_event_t a, g, temp;
-  if (mpuFound) {
+  if(mpuFound) {
     mpu.getEvent(&a, &g, &temp);
-    // Apply correction to raw gyro values
     float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
     float corrGx, corrGy, corrGz;
     correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
-    if (fabs(corrGx) > gyroXerror) { gyroX += corrGx / 50.00; }
-    if (fabs(corrGy) > gyroYerror) { gyroY += corrGy / 70.00; }
-    if (fabs(corrGz) > gyroZerror) { gyroZ += corrGz / 90.00; }
+    if(fabs(corrGx) > gyroXerror) { gyroX += corrGx / 50.00; }
+    if(fabs(corrGy) > gyroYerror) { gyroY += corrGy / 70.00; }
+    if(fabs(corrGz) > gyroZerror) { gyroZ += corrGz / 90.00; }
     StaticJsonDocument<200> doc;
     doc["gyroX"] = gyroX;
     doc["gyroY"] = gyroY;
@@ -227,11 +316,10 @@ String getGyroReadings() {
   }
 }
 
-// getAccReadings() returns a JSON string with the corrected accelerometer readings.
 String getAccReadings() {
   sensors_event_t a, g, temp;
   StaticJsonDocument<200> doc;
-  if (mpuFound) {
+  if(mpuFound) {
     mpu.getEvent(&a, &g, &temp);
     float corrAx, corrAy, corrAz;
     correctAxes(a.acceleration.x, a.acceleration.y, a.acceleration.z, corrAx, corrAy, corrAz);
@@ -248,10 +336,9 @@ String getAccReadings() {
   return accString;
 }
 
-// getTemperatureReading() returns the MPU6050 temperature (corrected) as a string.
 String getTemperatureReading() {
   sensors_event_t a, g, temp;
-  if (mpuFound) {
+  if(mpuFound) {
     mpu.getEvent(&a, &g, &temp);
     return String(temp.temperature);
   } else {
@@ -259,18 +346,188 @@ String getTemperatureReading() {
   }
 }
 
-// -----------------------
-// NEW FEATURE: File Upload Endpoints (using SPIFFS)
-// -----------------------
-// Handler for file upload events (SPIFFS).
+// ---------------------------------------------------------------------------
+// Unified Upload Form with Radio Selection (embedded in the file manager page)
+// ---------------------------------------------------------------------------
+const char upload_form_combined[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+  <head>
+    <title>ESP32 File Upload</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+  </head>
+  <body>
+    <h2>Upload File</h2>
+    <form id="uploadForm" method="POST" enctype="multipart/form-data">
+      <label for="targetFolder">Target Folder:</label><br>
+      <input type="text" id="targetFolder" name="targetFolder" placeholder="/folder" value="/"><br>
+      <label>Select File System:</label><br>
+      <input type="radio" id="fsSpiffs" name="fs" value="SPIFFS" checked>
+      <label for="fsSpiffs">SPIFFS</label><br>
+      <input type="radio" id="fsSd" name="fs" value="SD">
+      <label for="fsSd">SD Card</label><br><br>
+      <input type="file" name="upload"><br>
+      <input type="submit" value="Upload">
+    </form>
+    <script>
+      // Change form action based on file system selection.
+      document.getElementById("uploadForm").addEventListener("submit", function(event) {
+         var folder = document.getElementById("targetFolder").value;
+         var fsOption = document.querySelector('input[name="fs"]:checked').value;
+         if(fsOption === "SPIFFS"){
+           this.action = "/upload?targetFolder=" + encodeURIComponent(folder);
+         } else {
+           this.action = "/uploadsd?targetFolder=" + encodeURIComponent(folder);
+         }
+      });
+    </script>
+  </body>
+</html>
+)rawliteral";
+
+// ---------------------------------------------------------------------------
+// Combined File Manager Page (Lists SD_MMC and SPIFFS files, with upload form)
+// ---------------------------------------------------------------------------
+void handleFiles() {
+  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>File Manager</title>";
+  html += "<style>"
+          "body { font-family: Arial, sans-serif; padding: 20px; background-color: #EEEEEE; }"
+          "h1, h2 { text-align: center; }"
+          "ul { list-style: none; padding: 0; }"
+          "li { margin-bottom: 10px; }"
+          "</style></head><body>";
+  html += "<h1>File Manager</h1>";
+  
+  // Upload Form (integrated with FS selection)
+  html += "<h2>Upload New File</h2>";
+  html += upload_form_combined;
+  
+
+  // SD_MMC Files Listing
+  html += "<h2>SD Card Files</h2><ul>";
+  File rootSD = SD_MMC.open("/");
+  File file = rootSD.openNextFile();
+  while (file) {
+    if (!file.isDirectory()) {
+      String filename = file.name();
+      float fileSizeMB = file.size() / (1024.0 * 1024.0);
+      String lastUpdated = "N/A";
+      #ifdef ESP32
+      time_t t = file.getLastWrite();
+      if (t > 0) {
+        struct tm *tmInfo = localtime(&t);
+        char timeStr[26];
+        strftime(timeStr, 26, "%Y-%m-%d %H:%M:%S", tmInfo);
+        lastUpdated = String(timeStr);
+      }
+      #endif
+      html += "<li>" + filename + " - " + String(fileSizeMB, 2) + " MB, Last Updated: " + lastUpdated;
+      html += " <button onclick=\"deleteFile('" + filename + "')\">Delete</button>";
+      html += " <button onclick=\"window.open('/downloadFile?name=" + filename + "','_blank')\">Download</button></li>";
+    }
+    file = rootSD.openNextFile();
+  }
+  html += "</ul>";
+
+  // SPIFFS Files Listing
+  html += "<h2>SPIFFS Files</h2><ul>";
+  File rootSPIFFS = SPIFFS.open("/");
+  File spFile = rootSPIFFS.openNextFile();
+  while (spFile) {
+    String spFilename = spFile.name();
+    float fileSizeMB = spFile.size() / (1024.0 * 1024.0);
+    String lastUpdated = "N/A";  // SPIFFS does not support last modification time.
+    html += "<li>" + spFilename + " - " + String(fileSizeMB, 2) + " MB, Last Updated: " + lastUpdated;
+    html += " <button onclick=\"deleteFile('" + spFilename + "')\">Delete</button>";
+    html += " <button onclick=\"window.open('/downloadFile?name=" + spFilename + "','_blank')\">Download</button></li>";
+    spFile = rootSPIFFS.openNextFile();
+  }
+  html += "</ul>";
+
+  html += "<div style='text-align:center;'><a href='/'><button type='button'>Back</button></a></div>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+// ---------------------------------------------------------------------------
+// Combined File Download Handler (checks SD_MMC then SPIFFS)
+// ---------------------------------------------------------------------------
+void handleCombinedFileDownload() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "File name not specified");
+    return;
+  }
+  String filename = server.arg("name");
+  if (filename.charAt(0) != '/') { filename = "/" + filename; }
+  if (SD_MMC.exists(filename.c_str())) {
+    File file = SD_MMC.open(filename.c_str(), "r");
+    if (!file) {
+      server.send(500, "text/plain", "Failed to open file");
+      return;
+    }
+    server.sendHeader("Content-Disposition", "attachment; filename=" + filename);
+    server.streamFile(file, "text/plain");
+    file.close();
+    return;
+  } else if (SPIFFS.exists(filename.c_str())) {
+    File file = SPIFFS.open(filename.c_str(), "r");
+    if (!file) {
+      server.send(500, "text/plain", "Failed to open file");
+      return;
+    }
+    server.sendHeader("Content-Disposition", "attachment; filename=" + filename);
+    server.streamFile(file, "text/plain");
+    file.close();
+    return;
+  } else {
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+}
+  
+// ---------------------------------------------------------------------------
+// Combined File Deletion Handler (checks SD_MMC and SPIFFS)
+// ---------------------------------------------------------------------------
+void handleCombinedFileDelete() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "File name not specified");
+    return;
+  }
+  String filename = server.arg("name");
+  if (filename.charAt(0) != '/') { filename = "/" + filename; }
+  bool deleted = false;
+  if (SD_MMC.exists(filename.c_str())) {
+    if (SD_MMC.remove(filename.c_str())) {
+      deleted = true;
+    }
+  }
+  if (SPIFFS.exists(filename.c_str())) {
+    if (SPIFFS.remove(filename.c_str())) {
+      deleted = true;
+    }
+  }
+  if (deleted) {
+    server.send(200, "text/plain", "File deleted successfully");
+  } else {
+    server.send(500, "text/plain", "Failed to delete file");
+  }
+}
+  
+
+  
+// ---------------------------------------------------------------------------
+// SPIFFS File Upload Handler
+// ---------------------------------------------------------------------------
 void handleFileUpload() {
   HTTPUpload &upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
+    String folder = server.arg("targetFolder");
     String filename = upload.filename;
-    if (!filename.startsWith("/")) {
-      filename = "/" + filename;
+    if (!filename.startsWith("/")) { filename = "/" + filename; }
+    if (folder != "" && folder != "/") {
+      if (!folder.endsWith("/")) folder += "/";
+      filename = folder + filename;
     }
-    Serial.printf("Upload Start: %s\n", filename.c_str());
+    Serial.printf("SPIFFS Upload Start: %s\n", filename.c_str());
     uploadFile = SPIFFS.open(filename, FILE_WRITE);
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (uploadFile) {
@@ -279,255 +536,62 @@ void handleFileUpload() {
   } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile) {
       uploadFile.close();
+      Serial.printf("SPIFFS Upload End: %s, %u bytes\n", upload.filename.c_str(), upload.totalSize);
     }
-    Serial.printf("Upload End: %s, %u bytes\n", upload.filename.c_str(), upload.totalSize);
   }
 }
-
-
-// --- ADD this new function for SD card file upload handling ---
-void handleSDFileUpload() {
+  
+// ---------------------------------------------------------------------------
+// SD Card File Upload Handler
+// ---------------------------------------------------------------------------
+void handleFileUploadSD() {
   HTTPUpload &upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
+    String folder = server.arg("targetFolder");
     String filename = upload.filename;
-    if (!filename.startsWith("/")) filename = "/" + filename;
-    sdUploadFile = SD_MMC.open(filename.c_str(), FILE_WRITE);
+    if (!filename.startsWith("/")) { filename = "/" + filename; }
+    if (folder != "" && folder != "/") {
+      if (!folder.endsWith("/")) folder += "/";
+      filename = folder + filename;
+    }
+    Serial.printf("SD Upload Start: %s\n", filename.c_str());
+    File sdFile = SD_MMC.open(filename, FILE_WRITE);
+    if (!sdFile) {
+      Serial.println("Failed to open file on SD card");
+      return;
+    }
+    uploadFile = sdFile;
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (sdUploadFile) {
-      sdUploadFile.write(upload.buf, upload.currentSize);
+    if (uploadFile) {
+      uploadFile.write(upload.buf, upload.currentSize);
     }
   } else if (upload.status == UPLOAD_FILE_END) {
-    if (sdUploadFile) {
-      sdUploadFile.close();
-    }
-    Serial.printf("SD upload complete: %s (%u bytes)\n", upload.filename.c_str(), upload.totalSize);
-  }
-}
-
-
-
-// --- ADD this new function for SPIFFS file listing ---
-void handleSPIFFSFileManager() {
-  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>SPIFFS File Manager</title><style>body{font-family:Arial,sans-serif;padding:20px;background:#EEE;}h1{text-align:center;}ul{list-style:none;padding:0;}li{margin:10px 0;}</style></head><body><h1>SPIFFS File Manager</h1><ul>";
-  File root = SPIFFS.open("/");
-  File file = root.openNextFile();
-  while(file) {
-    String fname = file.name();
-    html += "<li><a href='/spiffdownload?name=" + fname + "' target='_blank'>" + fname + "</a> (" + String(file.size()) + " bytes) ";
-    html += "<button onclick=\"if(confirm('Delete file " + fname + "?')){window.location.href='/spiffdelete?name=" + fname + "';}\">Delete</button></li>";
-    file.close();
-    file = root.openNextFile();
-  }
-    html += "<button style='display:inline-block;margin-right:10px;' onclick=\"window.open('/uploadform','_blank')\">Upload to SPIFFS Files</button>";
-  html += "</ul><div style='text-align:center;'><a href='/files'><button type='button'>Back</button></a></div></body></html>";
-  server.send(200, "text/html", html);
-}
-
-
-
-
-
-// -----------------------
-// NEW FEATURE: File Manager - Delete All Logs Endpoint
-// -----------------------
-// Deletes all SD_MMC files with ".csv" or ".txt" extensions except the active log "/log.csv"
-void handleDeleteAllLogs() {
-  int count = 0;
-  // First, collect the names of files that are not "/log.csv"
-  std::vector<String> filesToDelete;
-  File root = SD_MMC.open("/");
-  File file = root.openNextFile();
-  while(file) {
-    if (!file.isDirectory()) {
-      String filename = file.name();
-      if (!filename.equalsIgnoreCase("/log.csv")) {
-        filesToDelete.push_back(filename);
-      }
-    }
-    file.close();
-    file = root.openNextFile();
-  }
-  // Now delete each file from the collected list
-  for (size_t i = 0; i < filesToDelete.size(); i++) {
-    if (SD_MMC.remove(filesToDelete[i].c_str())) {
-      count++;
+    if (uploadFile) {
+      uploadFile.close();
+      Serial.printf("SD Upload End: %s, %u bytes\n", upload.filename.c_str(), upload.totalSize);
     }
   }
-  server.send(200, "text/plain", "Deleted " + String(count) + " log file(s)");
 }
-
-// -----------------------
-// File Management Endpoints (for SD_MMC) - Listing, Download & Delete
-// -----------------------
-void handleFiles() {
-  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>File Manager</title>";
-  html += "<style>body{font-family:Arial,sans-serif;padding:20px;background-color:#EEEEEE;}h1{text-align:center;}ul{list-style-type:none;padding:0;}li{margin:10px 0;}</style>";
   
-  // Extra buttons arranged in one row at the top
-  html += "<div style='text-align:center;margin-bottom:20px;'>";
-  html += "<a href='/spiffsfiles'><button style='display:inline-block;margin-right:10px;'>View SPIFFS Files</button></a>";
-  html += "<a href='/sduploadform'><button style='display:inline-block;margin-right:10px;'>Upload to SD Card</button></a>";
-
-  html += "<button style='display:inline-block;' onclick=\"if(confirm('Delete all log files?')){window.location.href='/deleteAllLogs';}\">Delete All Logs</button>";
-  html += "</div>";
-
-  html += "<h1>File Manager</h1><ul>";
-  
-  File root = SD_MMC.open("/");
-  File file = root.openNextFile();
-  while (file) {
-    if (!file.isDirectory()) {
-      String filename = file.name();
-      float fileSizeMB = file.size() / (1024.0 * 1024.0);
-      html += "<li>";
-      html += "<a href='/file?name=" + filename + "' target='_blank'>" + filename + "</a>";
-      html += " - " + String(fileSizeMB, 2) + " MB ";
-      html += "<button onclick=\"window.open('/downloadFile?name=" + filename + "','_blank')\">Download</button> ";
-      html += "<button onclick=\"window.location.href='/deleteFile?name=" + filename + "'\">Delete</button>";
-      html += "</li>";
-    }
-    file = root.openNextFile();
-  }
-  
-  html += "</ul><div style='text-align:center;'><a href='/'><button type='button'>Back</button></a></div></body></html>";
-  server.send(200, "text/html", html);
-}
-
-
-void handleSpiffDownload() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  if (!SPIFFS.exists(filename)) {
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  File file = SPIFFS.open(filename, "r");
-  if (!file) {
-    server.send(500, "text/plain", "Failed to open file");
-    return;
-  }
-  server.sendHeader("Content-Disposition", "attachment; filename=" + filename);
-  server.streamFile(file, "text/plain");
-  file.close();
-}
-
-void handleSpiffDelete() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  if (!SPIFFS.exists(filename)) {
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  SPIFFS.remove(filename);
-  // Redirect to the file spiffsfiles page (refresh)
-  server.sendHeader("Location", "/spiffsfiles", true);
-  server.send(302, "text/plain", "");
-
-}
-
-
-
-void handleFileDownloadForDownload() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  if (!SD_MMC.exists(filename.c_str())) {
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  File file = SD_MMC.open(filename.c_str(), "r");
-  if (!file) {
-    server.send(500, "text/plain", "Failed to open file");
-    return;
-  }
-  server.sendHeader("Content-Disposition", "attachment; filename=" + filename);
-  server.streamFile(file, "text/plain");
-  file.close();
-}
-
-void handleFileDelete() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  if (!SD_MMC.exists(filename.c_str())) {
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  // Delete the file (no confirmation here)
-  SD_MMC.remove(filename.c_str());
-  // Redirect to the file manager page (refresh)
-  server.sendHeader("Location", "/files", true);
-  server.send(302, "text/plain", "");
-}
-
-
-void handleFileDownload() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  if (!SD_MMC.exists(filename.c_str())) {
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  File file = SD_MMC.open(filename.c_str(), "r");
-  if (!file) {
-    server.send(500, "text/plain", "Failed to open file");
-    return;
-  }
-  server.streamFile(file, "text/plain");
-  file.close();
-}
 
 // -----------------------
-// Utility Function: correctAxes
+// Function: correctAxes
 // -----------------------
-// Corrects sensor readings due to sensor placement.
-// Mapping:
-//   Raw X  --> Corrected Y becomes -rawX
-//   Raw Y  --> Corrected X becomes rawY
-//   Raw Z  --> Remains unchanged
 void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY, float &corrZ) {
-  corrX = rawY;      // Map raw Y to corrected X
-  corrY = -rawX;     // Map raw X (with negative) to corrected Y
-  corrZ = rawZ;      // Z remains unchanged
+  corrX = rawY;
+  corrY = -rawX;
+  corrZ = rawZ;
 }
 
 // -----------------------
-// LED Helper Functions (remain as in working code)
+// LED Helper Functions
 // -----------------------
 void initLEDColors() {
-  redColor    = strip.Wheel(0);
-  blueColor   = strip.Wheel(170);
+  redColor = strip.Wheel(0);
+  blueColor = strip.Wheel(170);
   purpleColor = strip.Wheel(210);
-  greenColor  = strip.Wheel(85);
-  aquaColor   = strip.Wheel(125);
+  greenColor = strip.Wheel(85);
+  aquaColor = strip.Wheel(125);
   orangeColor = strip.Wheel(40);
 }
 
@@ -556,7 +620,7 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
 
 void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t rotations = 1) {
   for (uint16_t r = 0; r < rotations; r++) {
-    if (direction >= 0) {
+    if(direction >= 0) {
       for (int i = 0; i < LEDS_COUNT; i++) {
         strip.setLedColorData(i, color);
         strip.show();
@@ -584,15 +648,15 @@ void blinkColor(uint32_t color, int times, int delayms) {
 }
 
 void indicateWiFiStatus(bool connected) {
-  if (connected) { blinkColor(greenColor, 5, 250); }
+  if(connected) { blinkColor(greenColor, 5, 250); }
   else { blinkColor(orangeColor, 5, 250); }
 }
 
 // -----------------------
-// Utility Function: getTimeStampString
+// Utility Functions
 // -----------------------
 String getTimeStampString() {
-  if (lastSuccessfulNTP != 0) {
+  if(lastSuccessfulNTP != 0) {
     unsigned long currentEpoch = lastSuccessfulNTP + ((millis() - lastSyncMillis) / 1000);
     time_t t = (time_t)currentEpoch;
     struct tm* ti = localtime(&t);
@@ -612,7 +676,7 @@ String getTimeStampString() {
 float getLocalSeaLevelPressure() { return lastLocalPressure; }
 
 void updatePressureFromAPI() {
-  float localPressure = 1026.0;  // Default value
+  float localPressure = 1026.0;
   bool apiSuccess = false;
   HTTPClient http;
   String url = String(owmEndpoint) + "?lat=" + String(currentLatitude, 6) +
@@ -620,16 +684,14 @@ void updatePressureFromAPI() {
                "&exclude=minutely,hourly,daily,alerts&appid=" + String(openWeatherMapApiKey);
   http.begin(url);
   int httpCode = http.GET();
-  
-  if (httpCode == HTTP_CODE_OK) {
+  if(httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
     Serial.println("API Call successful. Payload:");
     Serial.println(payload);
-    
     StaticJsonDocument<1024> doc;
     DeserializationError error = deserializeJson(doc, payload);
-    if (!error) {
-      if (doc.containsKey("cod")) {
+    if(!error) {
+      if(doc.containsKey("cod")) {
         int apiErrorCode = doc["cod"];
         String apiErrorMessage = doc["message"].as<String>();
         Serial.printf("API Error %d: %s\n", apiErrorCode, apiErrorMessage.c_str());
@@ -653,14 +715,12 @@ void updatePressureFromAPI() {
     PressureSource = "HTTP Error";
   }
   http.end();
-
   float storedPressure = 0;
   EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
   Serial.print("EEPROM stored pressure: ");
   Serial.println(storedPressure);
-
-  if (!apiSuccess) {
-    if (storedPressure > 500.0 && storedPressure < 1100.0) {
+  if(!apiSuccess) {
+    if(storedPressure > 500.0 && storedPressure < 1100.0) {
       localPressure = storedPressure;
       PressureSource = "EEPROM";
       Serial.print("Using EEPROM Pressure: ");
@@ -672,7 +732,6 @@ void updatePressureFromAPI() {
       Serial.println(localPressure);
     }
   }
-  
   lastLocalPressure = localPressure;
   apiPressureUpdated = true;
 }
@@ -686,7 +745,7 @@ void parachuteRelease() {
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.csv", eventLog);
-  for (int i = 0; i < 2; i++) {
+  for(int i = 0; i < 2; i++) {
     parachuteservo.write(180);
     delay(50);
     parachuteservo.write(0);
@@ -703,7 +762,7 @@ void parachuteArmed() {
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.csv", eventLog);
-  if (!baselineCaptured) {
+  if(!baselineCaptured) {
     baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
     baselineCaptured = true;
     Serial.print("Baseline altitude captured: ");
@@ -729,12 +788,8 @@ void calibrateSensors() {
   parachuteStatus = "calibrating";
   Serial.println("Parachute status set to 'calibrating' for calibration.");
   showLEDColorsSequentially(purpleColor, -1, 1);
-  
-  // Capture baseline altitude using BMP280
   baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   baselineCaptured = true;
-  
-  // Calibrate accelerometer offsets with corrected axes
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
   float corrAx, corrAy, corrAz;
@@ -742,12 +797,10 @@ void calibrateSensors() {
   accXOffset = corrAx;
   accYOffset = corrAy;
   accZOffset = corrAz;
-  
   maxRelativeAltitude = 0;
   minRelativeAltitude = 1000000.0;
   maxAltitudeDrop = 0;
   minAltitudeDrop = 1000000.0;
-  
   Serial.print("Calibration complete. Baseline altitude: ");
   Serial.println(baselineAltitude);
   showLEDColorsSequentially(purpleColor, 1, 1);
@@ -760,7 +813,7 @@ void calibrateSensors() {
 // WebSocket Event Handler
 // -----------------------
 void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
-  switch (type) {
+  switch(type) {
     case WStype_DISCONNECTED:
       Serial.println("Client " + String(num) + " disconnected");
       blinkColor(redColor, 4, 300);
@@ -772,47 +825,47 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
     case WStype_TEXT: {
       StaticJsonDocument<200> doc;
       DeserializationError error = deserializeJson(doc, payload);
-      if (error) {
+      if(error) {
         Serial.print(F("deserializeJson() failed: "));
         Serial.println(error.f_str());
         return;
       } else {
-        if (doc.containsKey("newThreshold")) {
+        if(doc.containsKey("newThreshold")) {
           altitudeDropThreshold = doc["newThreshold"];
           Serial.print("New Altitude Drop Threshold: ");
           Serial.println(altitudeDropThreshold);
         }
-        if (doc.containsKey("newAccX")) {
+        if(doc.containsKey("newAccX")) {
           accXThreshold = doc["newAccX"];
           Serial.print("New Accelerometer X threshold: ");
           Serial.println(accXThreshold);
         }
-        if (doc.containsKey("newAccY")) {
+        if(doc.containsKey("newAccY")) {
           accYThreshold = doc["newAccY"];
           Serial.print("New Accelerometer Y threshold: ");
           Serial.println(accYThreshold);
         }
-        if (doc.containsKey("newAccZ")) {
+        if(doc.containsKey("newAccZ")) {
           accZThreshold = doc["newAccZ"];
           Serial.print("New Accelerometer Z threshold: ");
           Serial.println(accZThreshold);
         }
-        if (doc.containsKey("newTriggerLogic")) {
+        if(doc.containsKey("newTriggerLogic")) {
           String newLogic = doc["newTriggerLogic"];
           useAndLogic = (newLogic == "AND");
           Serial.print("New Trigger Logic: ");
           Serial.println(useAndLogic ? "AND" : "OR");
         }
-        if (doc.containsKey("calibrateSensors")) {
+        if(doc.containsKey("calibrateSensors")) {
           calibrateSensors();
           Serial.println("Sensors calibrated.");
         }
         const char* command = doc["parachute"];
         Serial.println("Received parachute command from client " + String(num));
-        if (String(command) == "Armed" && parachuteStatus != "armed") {
+        if(String(command) == "Armed" && parachuteStatus != "armed") {
           parachuteArmed();
           Serial.println("Parachute armed command processed.");
-        } else if (String(command) == "Released") {
+        } else if(String(command) == "Released") {
           parachuteRelease();
           Serial.println("Parachute release command processed.");
         }
@@ -830,7 +883,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("Starting setup..."));
 
-  // Begin SPIFFS for file uploads & static file serving.
+  // Mount SPIFFS for file upload & static file serving.
   if(!SPIFFS.begin(true)){
     Serial.println("An error occurred while mounting SPIFFS");
   } else {
@@ -892,22 +945,21 @@ void setup() {
     Serial.println("Card Mount Failed");
   } else {
     Serial.println("SD Card initialized.");
-String oldLogFile = "/log.csv";
-String timestamp = getTimeStampString();
-timestamp.replace(":", "");
-timestamp.replace(" ", "_");
-String newLogFile = "/" + timestamp + ".csv";  // Removed "log_" prefix
-if(SD_MMC.exists(oldLogFile.c_str())) {
-  if(SD_MMC.rename(oldLogFile.c_str(), newLogFile.c_str())) {
-    Serial.println("Previous log file renamed to " + newLogFile);
-  } else {
-    Serial.println("Failed to rename log file " + oldLogFile);
-  }
-} else {
-  Serial.println("No previous log file found.");
-}
-
-
+    String oldLogFile = "/log.csv";
+    String timestamp = getTimeStampString();
+    timestamp.replace(":", "");
+    timestamp.replace(" ", "_");
+    String newLogFile = "/log_" + timestamp + ".csv";
+    if(SD_MMC.exists(newLogFile.c_str())) { SD_MMC.remove(newLogFile.c_str()); }
+    if(SD_MMC.exists(oldLogFile.c_str())) {
+      if(SD_MMC.rename(oldLogFile.c_str(), newLogFile.c_str())) {
+        Serial.println("Previous log file renamed to " + newLogFile);
+      } else {
+        Serial.println("Failed to rename log file " + oldLogFile);
+      }
+    } else {
+      Serial.println("No previous log file found.");
+    }
     File file = SD_MMC.open(oldLogFile.c_str(), FILE_WRITE);
     if(file) {
       file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,AccX,AccY,AccZ,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space");
@@ -921,7 +973,6 @@ if(SD_MMC.exists(oldLogFile.c_str())) {
 
   Wire.begin(SDA_1, SCL_1);
 
-  // Initialize MPU6050 sensor
   if(mpu.begin(0x68)) {
     mpuFound = true;
     if(showSensorInitLog) { Serial.println("MPU6050 sensor found."); }
@@ -985,40 +1036,25 @@ if(SD_MMC.exists(oldLogFile.c_str())) {
   strip.show();
 
   // -----------------------
-  // Register Web Server Endpoints (Existing & NEW)
+  // Register Web Server Endpoints
   // -----------------------
   // Main UI page (one-liner compressed)
   server.on("/", []() { server.send(200, "text/html", webpage); });
-  // New Visualization subpage endpoint (files served from SPIFFS)
-server.on("/visualization", HTTP_GET, [](){ File file = SPIFFS.open("/index.html", "r"); if(!file){ server.send(404, "text/plain", "File not found"); return; } server.streamFile(file, "text/html"); file.close(); });
-
-
-
-
-  // --- ADD inside setup() where you register endpoints ---
-server.on("/spiffsfiles", HTTP_GET, [](){ handleSPIFFSFileManager(); });
-
-server.on("/spiffdownload", HTTP_GET, handleSpiffDownload);
-server.on("/spiffdelete", HTTP_GET, handleSpiffDelete);
-
+  // Serve visualization files from SPIFFS (upload your visualization files under /visualization)
+  server.serveStatic("/visualization", SPIFFS, "/visualization/");
+  // SPIFFS file listing endpoint (optional for debugging)
 
   
-  // File manager endpoints (SD_MMC)
   server.on("/files", []() { handleFiles(); });
-  server.on("/deleteFile", HTTP_GET, []() { handleFileDelete(); });
-  server.on("/downloadFile", HTTP_GET, []() { handleFileDownloadForDownload(); });
-  server.on("/file", HTTP_GET, []() { handleFileDownload(); });
-  // New endpoint: Delete all log files (CSV and TXT) except the active log "/log.csv"
-  server.on("/deleteAllLogs", HTTP_GET, []() { handleDeleteAllLogs(); });
+  // Combined File deletion (both SD_MMC and SPIFFS)
+  server.on("/deleteFile", HTTP_GET, []() { handleCombinedFileDelete(); });
+  // Combined file download endpoint (checks SD_MMC then SPIFFS)
+  server.on("/downloadFile", HTTP_GET, []() { handleCombinedFileDownload(); });
+  // File upload endpoint (SPIFFS)
+  server.on("/upload", HTTP_POST, []() { server.send(200, "text/plain", "Upload Successful"); }, handleFileUpload);
+// File upload endpoint (SD)
+  server.on("/uploadsd", HTTP_POST, []() { server.send(200, "text/plain", "SD Card Upload Successful"); }, handleFileUploadSD);
   
-server.on("/sduploadform", HTTP_GET, [](){ server.send_P(200, "text/html", R"rawliteral(<!DOCTYPE HTML><html><head><title>SD Card Upload</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Upload File to SD Card</h2><form method="POST" action="/sdupload" enctype="multipart/form-data"><input type="file" name="upload"><input type="submit" value="Upload"></form></body></html>)rawliteral"); }); server.on("/sdupload", HTTP_POST, [](){ server.send(200, "text/plain", "SD Card Upload Successful"); }, handleSDFileUpload);
-
-  
-  // File upload endpoints (SPIFFS)
-  server.on("/uploadform", HTTP_GET, []() { server.send_P(200, "text/html", upload_form); });
-  server.on("/upload", HTTP_POST, []() {
-    server.send(200, "text/plain", "Upload Successful");
-  }, handleFileUpload);
   
   // Sensor endpoints (with corrected axes)
   server.on("/gyro", HTTP_GET, []() { server.send(200, "application/json", getGyroReadings()); });
@@ -1055,7 +1091,6 @@ void loop() {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  // Compute relative altitude.
   float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
   if(absoluteAltitude > maxAbsoluteAltitude) maxAbsoluteAltitude = absoluteAltitude;
   if(absoluteAltitude < minAbsoluteAltitude) minAbsoluteAltitude = absoluteAltitude;
@@ -1066,14 +1101,12 @@ void loop() {
   if(altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
   if(altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
 
-  // Compute relative accelerometer values with axis correction.
   float corrAx, corrAy, corrAz;
   correctAxes(a.acceleration.x, a.acceleration.y, a.acceleration.z, corrAx, corrAy, corrAz);
   float relAccX = corrAx - accXOffset;
   float relAccY = corrAy - accYOffset;
   float relAccZ = corrAz - accZOffset;
 
-  // Verbose debugging output.
   Serial.print(getTimeStampString()); Serial.print(" BMP280 Temp: "); Serial.print(bmpTemp); Serial.println(" *C");
   Serial.print(getTimeStampString()); Serial.print(" BMP280 Pressure: "); Serial.print(bmp.readPressure()/100.0F); Serial.println(" hPa");
   Serial.print(getTimeStampString()); Serial.print(" Absolute Altitude: "); Serial.print(absoluteAltitude); Serial.println(" m");
@@ -1090,7 +1123,6 @@ void loop() {
   Serial.print(getTimeStampString()); Serial.print(" Max Rel Altitude: "); Serial.print(maxRelativeAltitude); Serial.print(" m, Min Rel Altitude: "); Serial.println(minRelativeAltitude);
   Serial.println("--------------------");
 
-  // CSV-formatted output for Serial Plotter.
   Serial.print(bmpTemp,2); Serial.print(",");
   Serial.print(bmp.readPressure()/100.0F,2); Serial.print(",");
   Serial.print(absoluteAltitude,2); Serial.print(",");
@@ -1104,7 +1136,6 @@ void loop() {
   Serial.print(g.gyro.y,2); Serial.print(",");
   Serial.println(g.gyro.z,2);
 
-  // Log sensor data to SD card as CSV.
   char dataString[512];
   String currentTimestamp = getTimeStampString();
   snprintf(dataString, sizeof(dataString),
@@ -1135,7 +1166,6 @@ void loop() {
            usedSpace);
   appendFile(SD_MMC, "/log.csv", dataString);
 
-  // Check trigger conditions.
   if(parachuteStatus == "armed") {
     bool triggerAlt = (altitudeDrop >= altitudeDropThreshold);
     bool triggerAccX = (fabs(relAccX) >= accXThreshold);
@@ -1146,7 +1176,6 @@ void loop() {
     if(triggerCondition) { parachuteRelease(); }
   }
 
-  // Build JSON for WebSocket broadcast.
   static unsigned long previousMillis = 0;
   int interval = 50;
   unsigned long nowMillis = millis();
@@ -1183,8 +1212,6 @@ void loop() {
     object["UsedSpace"] = usedSpace;
     serializeJson(doc, jsonString);
     webSocket.broadcastTXT(jsonString);
-
-
     previousMillis = nowMillis;
   }
   delay(50);
