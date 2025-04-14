@@ -1,4 +1,5 @@
 #include "sd_read_write.h"
+extern bool debugSerial;  // Declaration so the sub cpp file can use it.
 
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
     Serial.printf("Listing directory: %s\n", dirname);
@@ -80,15 +81,18 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 }
 
 void appendFile(fs::FS &fs, const char * path, const char * message){
+    if(debugSerial) {
     Serial.printf("Appending to file: %s\n", path);
-
+    }
     File file = fs.open(path, FILE_APPEND);
     if(!file){
         Serial.println("Failed to open file for appending");
         return;
     }
     if(file.print(message)){
+        if(debugSerial) {
         Serial.println("Message appended");
+        }
     } else {
         Serial.println("Append failed");
     }
