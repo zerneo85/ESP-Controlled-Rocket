@@ -11,6 +11,8 @@ The ESP Controlled Rocket repository is a comprehensive project that brings toge
   - [Features](#features)
   - [Code Overview](#code-overview)
   - [Flight Computer Screenshot](#flight-computer-screenshot)
+  - [File Manager Screenshot](#file-manager-screenshot)
+  - [Visualization Screenshot](#visualization-screenshot)
 - [3D Designs](#3d-designs)
   - [Overview of 3D Models](#overview-of-3d-models)
 - [Assembly & Build](#assembly--build)
@@ -31,37 +33,53 @@ The **ESP Controlled Rocket** project combines state-of-the-art embedded firmwar
 ### Features
 
 - **Sensor Integration:**  
-  - **BMP280 Sensor:** Reads temperature, pressure, and computes altitude.
-  - **MPU6050 Sensor:** Provides accelerometer, gyroscope, and sensor temperature data.
+  - **BMP280 Sensor:** Reads temperature, pressure, and computes altitude.  
+  - **MPU6050 Sensor:** Provides accelerometer, gyroscope, and sensor temperature data.  
 - **Real-Time Telemetry:**  
-  - A web server with WebSocket support streams live flight data including altitude, temperature, inertial measurements, and parachute status.
+  - A web server with WebSocket support streams live flight data including altitude, temperature, inertial measurements, and parachute status.  
 - **Parachute Deployment:**  
-  - Monitors a corrected altitude drop calculation to trigger the servo-controlled parachute release automatically.
-  - Includes a manual release function via the web interface for testing.
+  - Monitors a corrected altitude drop calculation to trigger the servo-controlled parachute release automatically.  
+  - Includes a manual release function via the web interface for testing.  
 - **Enhanced SD Card Logging:**  
-  - Logs flight data and key events with accurate timestamps.
+  - Logs flight data and key events with accurate timestamps to the on-board SD card.  
 - **RGB LED Status Indicators:**  
-  - An LED ring provides visual feedback for network connectivity, parachute arming, and release states.
+  - An LED ring provides visual feedback for network connectivity, parachute arming, and release states.  
 - **WiFi Connectivity & OTA Updates:**  
-  - Connects to a predefined network or automatically sets up an access point.
-  - Supports remote firmware updates through an HTTP OTA endpoint.
+  - Connects to a predefined network or automatically sets up an access point if no network is found.  
+  - Supports remote firmware updates through an HTTP OTA endpoint (accessible via mDNS).  
 - **Time Synchronization:**  
-  - Uses NTP to provide accurate timestamps for logging.
+  - Uses NTP to obtain accurate time for timestamping logs and events.  
+- **Web-Based File Management:**  
+  - Provides a web interface to manage onboard files on both the ESP32’s internal SPIFFS flash and the SD card (supports file upload, download, and deletion).  
+- **3D Visualization Support (Optional):**  
+  - Streams orientation and telemetry data suitable for an optional 3D visualization tool to display the rocket’s attitude in real time (experimental feature, not required for core functionality).  
+- **Configurable Axis Orientation:**  
+  - The sensor axis alignment can be adjusted at runtime via the web interface to accommodate different board mounting orientations.  
+- **Live Location Overrides:**  
+  - Allows input of the current latitude and longitude through the web dashboard, which overrides the initially loaded launch coordinates for more accurate altitude calculations and telemetry based on local conditions.
+
 
 ### Code Overview
 
-The flight computer firmware is organized into modules that handle:
-- **Sensor Management:** Initialization and continuous reading of the BMP280 and MPU6050 sensors.
-- **Data Processing:** Calculation of absolute altitude, relative altitude (with baseline captured at arming), and a corrected altitude drop.
-- **Parachute Control:** Both automatic deployment (triggered by an altitude drop exceeding a threshold) and manual release via a web interface.
-- **LED Status Indicators:** Control of an RGB LED ring that reflects current system and network status.
-- **Communication:** A lightweight web server and WebSocket system that broadcast real-time flight data.
-- **Logging:** Timestamped recording of flight events and sensor readings on an SD card.
-- **OTA Updates:** Remote firmware update functionality via HTTP OTA and mDNS service.
+The flight computer firmware is organized into modules that handle:  
+- **Sensor Management**  
+- **Data Processing**  
+- **Parachute Control**  
+- **LED Status Indicators**  
+- **Communication**  
+- **Logging**  
+- **OTA Updates**
 
 ### Flight Computer Screenshot
+![Flight Computer Screenshot](media/flight_computer_dashboard_6.png)
 
-![Flight Computer Screenshot](media/flight_computer_dashboard_5.png)
+
+### File Manager Screenshot
+![File Manager Screenshot](media/filemanager_dashboard_1.png)
+
+### Visualization Screenshot
+![Visualization Screenshot](media/visualization_dashboard_1.png)
+
 
 ---
 
@@ -109,6 +127,9 @@ For detailed build instructions, refer to the [Assembly Guide](docs/assembly_gui
 
 4. **Running the Code:**  
    Compile and upload the code to your ESP32 using the Arduino IDE or PlatformIO.
+
+5. **File Management**
+  There is a webinterface where all files on SD Card en SPIFF memory can be managed.
 
 ### Debugging and Logging
 
@@ -166,12 +187,6 @@ Based on the estimates above and practical design trade-offs, an optimal configu
 
 *Summary Recommendation:* For a 6 cm diameter rocket, a body length of **150–200 cm**, filled to **42%** of its internal volume with water and operating at around **8 bar** (with a ~10 mm nozzle) is predicted to yield a strong balance between performance (altitude, thrust) and manageable mass and structural demands. Actual performance will depend on factors such as aerodynamic drag, seal quality, and material strength, so practical tests and iterative tuning are advised.
 
-
-
-
-
-
----
 
 ## Contributing
 

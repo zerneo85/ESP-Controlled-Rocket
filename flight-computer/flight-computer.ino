@@ -5,6 +5,8 @@
  *  - Added comprehensive inline documentation to clarify code behavior.
  *  - Anonymized API key and location data (longitude and latitude).
  *  - Minor improvements to code readability and structure.
+ *  - Corrected Axis
+
  */
 
 // -----------------------
@@ -44,19 +46,21 @@ extern "C" {
 // LED Circle Setup (Freenove_WS2812)
 // -----------------------
 #include "Freenove_WS2812_Lib_for_ESP32.h"
-#define LEDS_COUNT 12         // Number of LEDs in the strip
-#define LEDS_PIN 17           // GPIO pin for the LED strip data line
-#define CHANNEL 0             // PWM channel (if applicable)
+#define LEDS_COUNT 12  // Number of LEDs in the strip
+#define LEDS_PIN 17    // GPIO pin for the LED strip data line
+#define CHANNEL 0      // PWM channel (if applicable)
 Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
 
 // -----------------------
 // Macro Definitions & Global Variables
 // -----------------------
-#define EEPROM_SIZE 10        // EEPROM size
-#define EEPROM_PRESSURE_ADDR 0 // EEPROM address for storing pressure
+#define EEPROM_SIZE 10          // EEPROM size
+#define EEPROM_PRESSURE_ADDR 0  // EEPROM address for storing pressure
+bool apiSuccess = false;
+bool debugSerial = false;      // Enable/disable serial debug printing
+bool sensorModeFlight = true;  // true: Flight sensor mode; false: Visualization mode
 
-bool debugSerial = false;       // Enable/disable serial debug printing
-bool sensorModeFlight = true;   // true: Flight sensor mode; false: Visualization mode
+int axisConfig = 0;  // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 
 // SD card storage info
 uint64_t totalSpace;
@@ -64,7 +68,7 @@ uint64_t usedSpace;
 
 // Pressure variables for sensor readings and logging
 String PressureSource = "";
-float lastLocalPressure = 1026.0;
+float lastLocalPressure = 1013.25;
 bool apiPressureUpdated = false;
 bool showSensorInitLog = true;
 bool bmpFound = false;
@@ -73,23 +77,25 @@ bool mpuFound = false;
 // -----------------------
 // WiFi Credentials and Access Point settings
 // -----------------------
-const char* ssid = "TDGC-Rocket";
-const char* wifiPassword = "Rocket2022!";
-const char* apSSID = "RocketAP";
-const char* apPassword = "Rocket2022!";
+
+const char *ssid = "TDGC-Rocket";
+const char *wifiPassword = "Rocket2022!";
+const char *apSSID = "RocketAP";
+const char *apPassword = "Rocket2022!";
 
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char* openWeatherMapApiKey = "YOUR_API_KEY";  // Anonymized API key
-float currentLatitude = 0.000000;    // Anonymized Latitude
-float currentLongitude = 0.000000;   // Anonymized Longitude
-const char* owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
+const char *openWeatherMapApiKey = "API_KEY";  // Anonymized API key
+float currentLatitude = 52.37918711316107;                              // Anonymized Latitude
+float currentLongitude = 4.899939919126087;                              // Anonymized Longitude
+const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
+
 
 // -----------------------
 // Time Setup using NTP
 // -----------------------
-#define UTC_OFFSET_IN_SECONDS 3600     // Offset for local time zone (1 hour)
+#define UTC_OFFSET_IN_SECONDS 3600  // Offset for local time zone (1 hour)
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", UTC_OFFSET_IN_SECONDS);
 unsigned long lastSuccessfulNTP = 0;
@@ -130,10 +136,10 @@ uint32_t redColor, blueColor, purpleColor, greenColor, aquaColor, orangeColor;
 // -----------------------
 // Sensor & Servo Instances
 // -----------------------
-Adafruit_BMP280 bmp;        // BMP280 sensor instance
-Adafruit_MPU6050 mpu;        // MPU6050 sensor instance
-Servo parachuteservo;        // Servo controlling the parachute deployment
-int servoPin = 14;           // Servo control pin
+Adafruit_BMP280 bmp;   // BMP280 sensor instance
+Adafruit_MPU6050 mpu;  // MPU6050 sensor instance
+Servo parachuteservo;  // Servo controlling the parachute deployment
+int servoPin = 14;     // Servo control pin
 
 // -----------------------
 // Web Server & OTA Instances
@@ -154,10 +160,11 @@ HTTPUpdateServer httpUpdater;
 // -----------------------
 // NEW FEATURE CODE GLOBALS (For visualization updates and gyro calibration)
 // -----------------------
+// Gyroscope sensor deviation values
 float gyroX = 0.0, gyroY = 0.0, gyroZ = 0.0;
-const float gyroXerror = 0.07;
+const float gyroXerror = 0.03;
 const float gyroYerror = 0.03;
-const float gyroZerror = 0.01;
+const float gyroZerror = 0.03;
 File uploadFile;  // Global handle for file uploads
 
 // -----------------------
@@ -166,140 +173,210 @@ File uploadFile;  // Global handle for file uploads
 unsigned long lastTimeGyro = 0;
 unsigned long lastTimeAcc = 0;
 unsigned long lastTimeTemperature = 0;
-const unsigned long gyroDelay = 50;
-const unsigned long accelerometerDelay = 50;
+const unsigned long gyroDelay = 10;
+const unsigned long accelerometerDelay = 200;
 const unsigned long temperatureDelay = 1000;
 
 // ---------------------------------------------------------------------------
 // Main Web Page String (Flight Information Page) – HTML content served to clients
 // ---------------------------------------------------------------------------
-String webpage = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                 "<title>Flight Computer</title>"
-                 "<style>/* CSS styling for the flight data page */ body{background-color:#EEEEEE;font-family:Arial,sans-serif;color:#003366;margin:0;padding:20px}"
-                 "h1{text-align:center;margin-bottom:20px}"
-                 ".data-table{margin:0 auto;border-collapse:collapse;width:90%;max-width:600px;background-color:#FFF;"
-                 "box-shadow:0 0 10px rgba(0,0,0,0.1)}"
-                 ".data-table th,.data-table td{padding:12px 15px;border:1px solid #CCC;text-align:left}"
-                 ".data-table th{background-color:#003366;color:#FFF}"
-                 ".data-table tr:nth-child(even){background-color:#F9F9F9}"
-                 ".button-container{text-align:center;margin-top:20px}"
-                 "button{background-color:#003366;color:#FFF;border:none;padding:10px 20px;font-size:16px;cursor:pointer}"
-                 "button:hover{background-color:#0055AA}"
-                 "input[type='number'],select{padding:8px;font-size:16px;width:150px;margin-right:10px;margin-top:5px}"
-                 "</style></head><body>"
-                 "<h1>Flight Information</h1>"
-                 "<table class='data-table'>"
-                 "<tr><th>Parameter</th><th>Value</th></tr>"
-                 "<tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>"
-                 "<tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr>"
-                 "<tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr>"
-                 "<tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr>"
-                 "<tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr>"
-                 "<tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr>"
-                 "<tr><td>Acc X</td><td id='AccX'>-</td></tr>"
-                 "<tr><td>Acc Y</td><td id='AccY'>-</td></tr>"
-                 "<tr><td>Acc Z</td><td id='AccZ'>-</td></tr>"
-                 "<tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr>"
-                 "<tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr>"
-                 "<tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr>"
-                 "<tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr>"
-                 "<tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr>"
-                 "<tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr>"
-                 "<tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr>"
-                 "<tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr>"
-                 "<tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr>"
-                 "<tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr>"
-                 "<tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr>"
-                 "<tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr>"
-                 "<tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>"
-                 "<tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>"
-                 "<tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>"
-                 "<tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>"
-                 "<tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>"
-                 "<tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>"
-                 "</table>"
-                 "<div class='button-container'>"
-                 "<button type='button' id='BTN_ARM' onclick=\"button_arm()\">Arm Parachute</button> "
-                 "<button type='button' id='BTN_RELEASE' onclick=\"button_release()\">Release Parachute</button> "
-                 "<button type='button' id='BTN_CALIBRATE' onclick=\"button_calibrate()\">Calibrate Sensors</button>"
-                 "</div>"
-                 "<div class='button-container'>"
-                 "<input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'><br>"
-                 "<input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'><br>"
-                 "<input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'><br>"
-                 "<input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'><br>"
-                 "<select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select><br>"
-                 "<button type='button' id='BTN_UPDATE_TRIGGERS' onclick=\"button_update_triggers()\">Update Triggers</button>"
-                 "</div>"
-                 "<div class='button-container'>"
-                 "<button type='button' id='BTN_OTA' onclick=\"window.open('/update','_blank')\">OTA Upgrade</button> "
-                 "<button type='button' id='BTN_FILES' onclick=\"window.open('/files','_blank')\">Files</button> "
-                 "<button type='button' id='BTN_VIS' onclick=\"window.open('/visualization','_blank')\">Visualization</button>"
-                 "</div>"
-                 "<script>"
-                 "var Socket;"
-                 "function init(){"
-                 "  Socket = new WebSocket('ws://' + window.location.hostname + ':81/');"
-                 "  Socket.onmessage = function(event){ processCommand(event); };"
-                 "}"
-                 "function button_arm(){ var msg = { parachute: 'Armed' }; Socket.send(JSON.stringify(msg)); }"
-                 "function button_release(){ var msg = { parachute: 'Released' }; Socket.send(JSON.stringify(msg)); }"
-                 "function button_update_triggers(){"
-                 "  var altVal = parseFloat(document.getElementById('newAltThreshold').value);"
-                 "  var accXVal = parseFloat(document.getElementById('newAccX').value);"
-                 "  var accYVal = parseFloat(document.getElementById('newAccY').value);"
-                 "  var accZVal = parseFloat(document.getElementById('newAccZ').value);"
-                 "  var logicVal = document.getElementById('triggerLogic').value;"
-                 "  var msg = { newThreshold: altVal, newAccX: accXVal, newAccY: accYVal, newAccZ: accZVal, newTriggerLogic: logicVal };"
-                 "  Socket.send(JSON.stringify(msg));"
-                 "}"
-                 "function button_calibrate(){ var msg = { calibrateSensors: true }; Socket.send(JSON.stringify(msg)); }"
-                 "function deleteFile(filename){"
-                 "  if(confirm('Are you sure you want to delete ' + filename + '?')){"
-                 "    var xhr = new XMLHttpRequest();"
-                 "    xhr.open('GET','/deleteFile?name=' + encodeURIComponent(filename),true);"
-                 "    xhr.onload = function(){"
-                 "      if(xhr.status==200){"
-                 "         alert('File deleted successfully');"
-                 "         location.reload();"
-                 "      } else { alert('Deletion failed: ' + xhr.statusText); }"
-                 "    };"
-                 "    xhr.send();"
-                 "  }"
-                 "}"
-                 "function processCommand(event){"
-                 "  var obj = JSON.parse(event.data);"
-                 "  document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude || '-';"
-                 "  document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude || '-';"
-                 "  document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop || '-';"
-                 "  document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp || '-';"
-                 "  document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure || '-';"
-                 "  document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp || '-';"
-                 "  document.getElementById('AccX').innerHTML = obj.AccX || '-';"
-                 "  document.getElementById('AccY').innerHTML = obj.AccY || '-';"
-                 "  document.getElementById('AccZ').innerHTML = obj.AccZ || '-';"
-                 "  document.getElementById('Gyroscope').innerHTML = obj.Gyroscope || '-';"
-                 "  document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus || '-';"
-                 "  document.getElementById('LocalPressure').innerHTML = obj.LocalPressure || '-';"
-                 "  document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure || '-';"
-                 "  document.getElementById('PressureSource').innerHTML = obj.PressureSource || '-';"
-                 "  document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude || '-';"
-                 "  document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude || '-';"
-                 "  document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude || '-';"
-                 "  document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude || '-';"
-                 "  document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop || '-';"
-                 "  document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop || '-';"
-                 "  document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold || '-';"
-                 "  document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold || '-';"
-                 "  document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold || '-';"
-                 "  document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold || '-';"
-                 "  document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic || '-';"
-                 "  document.getElementById('TotalSpace').innerHTML = obj.TotalSpace || '-';"
-                 "  document.getElementById('UsedSpace').innerHTML = obj.UsedSpace || '-';"
-                 "}"
-                 "window.onload = function(event){ init(); };"
-                 "</script>"
-                 "</body></html>";
+const char *webpage = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <title>Flight Computer</title>
+  <style>
+    /* CSS styling for the flight data page */
+    body{background-color:#EEEEEE;
+         font-family:Arial,sans-serif;
+         color:#003366;
+         margin:0;padding:20px}
+    h1{text-align:center;margin-bottom:20px}
+    .data-table{margin:0 auto;
+                border-collapse:collapse;
+                width:90%;max-width:600px;
+                background-color:#FFF;
+                box-shadow:0 0 10px rgba(0,0,0,0.1)}
+    .data-table th,.data-table td{padding:12px 15px;
+                                  border:1px solid #CCC;
+                                  text-align:left}
+    .data-table th{background-color:#003366;color:#FFF}
+    .data-table tr:nth-child(even){background-color:#F9F9F9}
+    .button-container{text-align:center;margin-top:20px}
+    button{background-color:#003366;
+           color:#FFF;
+           border:none;
+           padding:10px 20px;
+           font-size:16px;
+           cursor:pointer}
+    button:hover{background-color:#0055AA}
+    input[type='number'],select{padding:8px;
+                               font-size:16px;
+                               width:150px;
+                               margin-right:10px;
+                               margin-top:5px}
+  </style>
+</head>
+<body>
+  <h1>Flight Information</h1>
+
+  <table class='data-table'>
+    <tr><th>Parameter</th><th>Value</th></tr>
+    <tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>
+    <tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr>
+    <tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr>
+    <tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr>
+    <tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr>
+    <tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr>
+    <tr><td>Acc X</td><td id='AccX'>-</td></tr>
+    <tr><td>Acc Y</td><td id='AccY'>-</td></tr>
+    <tr><td>Acc Z</td><td id='AccZ'>-</td></tr>
+    <tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr>
+    <tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr>
+    <tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr>
+    <tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr>
+    <tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr>
+    <tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr>
+    <tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr>
+    <tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr>
+    <tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr>
+    <tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr>
+    <tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr>
+    <tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr>
+    <tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>
+    <tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>
+    <tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>
+    <tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>
+    <tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>
+    <tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>
+    <tr><td>Sensor Mode Flight</td><td id='SensorModeFlight'>-</td></tr>
+    <tr><td>Latitude</td><td id="currentLatitude">-</td></tr>
+<tr><td>Longitude</td><td id="currentLongitude">-</td></tr>
+  </table>
+
+  <div class='button-container'>
+    <button id='BTN_ARM' onclick="button_arm()">Arm Parachute</button>
+    <button id='BTN_RELEASE' onclick="button_release()">Release Parachute</button>
+    <button id='BTN_CALIBRATE' onclick="button_calibrate()">Calibrate Sensors</button>
+  </div>
+
+  <!-- Latitude/Longitude inputs -->
+  <div class='button-container'>
+    <label for='latitude'>Latitude:</label>
+    <input type='number' id='latitude' step='0.000001' value='52.033230' placeholder='Latitude'>
+    <label for='longitude'>Longitude:</label>
+    <input type='number' id='longitude' step='0.000001' value='4.364834' placeholder='Longitude'>
+    <button id='BTN_SET_LOCATION' onclick="button_update_location()">Set Location</button>
+  </div>
+
+  <div class='button-container'>
+    <label for='newAltThreshold'>Altitude Drop:</label>
+    <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
+    <label for='newAccX'>Acc X:</label>
+    <input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'>
+    <label for='newAccY'>Acc Y:</label>
+    <input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'>
+    <label for='newAccZ'>Acc Z:</label>
+    <input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'>
+    <label for='triggerLogic'>Trigger Logic:</label>
+    <select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select>
+    <button id='BTN_UPDATE_TRIGGERS' onclick="button_update_triggers()">Update Triggers Thresholds</button>
+  </div>
+
+  <div class='button-container'>
+    <label for='axisConfig'>Axis Mapping Configuration:</label>
+    <select id='axisConfig'>
+      <option value='0'>0 - Swap x>X and y>Z and z>Y</option>
+      <option value='1'>1 - Swap x>X and y>Y and z>Z</option>
+      <option value='2'>2 - Swap x>Y and y>X and z>Z</option>
+      <option value='3'>3 - Swap x>Y and y>Z and z>X</option>
+      <option value='4'>4 - Swap x>Z and y>Y and z>X</option>
+      <option value='5'>5 - Swap x>Z and y>X and z>Y</option>
+    </select>
+    <button onclick="button_update_axis()">Update Axis Mapping</button>
+  </div>
+
+  <div class='button-container'>
+    <button id='BTN_OTA' onclick="window.open('/update','_blank')">OTA Upgrade</button>
+    <button id='BTN_FILES' onclick="window.open('/files','_blank')">Files</button>
+    <button id='BTN_VIS' onclick="window.open('/visualization','_blank')">Visualization</button>
+  </div>
+
+<script>
+  var Socket;
+  function init(){
+    Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+    Socket.onmessage = function(event){ processCommand(event); };
+  }
+  function button_arm(){ Socket.send(JSON.stringify({ parachute: 'Armed' })); }
+  function button_release(){ Socket.send(JSON.stringify({ parachute: 'Released' })); }
+  function button_calibrate(){ Socket.send(JSON.stringify({ calibrateSensors: true })); }
+
+  function button_update_location(){
+    var lat = parseFloat(document.getElementById('latitude').value);
+    var lon = parseFloat(document.getElementById('longitude').value);
+    Socket.send(JSON.stringify({ latitude: lat, longitude: lon }));
+  }
+
+  function button_update_triggers(){
+    var altVal = parseFloat(document.getElementById('newAltThreshold').value);
+    var accXVal = parseFloat(document.getElementById('newAccX').value);
+    var accYVal = parseFloat(document.getElementById('newAccY').value);
+    var accZVal = parseFloat(document.getElementById('newAccZ').value);
+    var logicVal = document.getElementById('triggerLogic').value;
+    Socket.send(JSON.stringify({
+      newThreshold: altVal,
+      newAccX: accXVal,
+      newAccY: accYVal,
+      newAccZ: accZVal,
+      newTriggerLogic: logicVal
+    }));
+  }
+
+  function button_update_axis(){
+    var v = parseInt(document.getElementById('axisConfig').value);
+    Socket.send(JSON.stringify({ axisConfig: v }));
+  }
+
+  function processCommand(event){
+    var obj = JSON.parse(event.data);
+    document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude||'-';
+    document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude||'-';
+    document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop||'-';
+    document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp||'-';
+    document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure||'-';
+    document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp||'-';
+    document.getElementById('AccX').innerHTML = obj.AccX||'-';
+    document.getElementById('AccY').innerHTML = obj.AccY||'-';
+    document.getElementById('AccZ').innerHTML = obj.AccZ||'-';
+    document.getElementById('Gyroscope').innerHTML = obj.Gyroscope||'-';
+    document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus||'-';
+    document.getElementById('LocalPressure').innerHTML = obj.LocalPressure||'-';
+    document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure||'-';
+    document.getElementById('PressureSource').innerHTML = obj.PressureSource||'-';
+    document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude||'-';
+    document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude||'-';
+    document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude||'-';
+    document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude||'-';
+    document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop||'-';
+    document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop||'-';
+    document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold||'-';
+    document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold||'-';
+    document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold||'-';
+    document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold||'-';
+    document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic||'-';
+    document.getElementById('TotalSpace').innerHTML = obj.TotalSpace||'-';
+    document.getElementById('UsedSpace').innerHTML = obj.UsedSpace||'-';
+    document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
+document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
+document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
+  }
+  window.onload = init;
+</script>
+</body>
+</html>
+)rawliteral";
 
 // ---------------------------------------------------------------------------
 // Sensor Reading Functions (with Axis Correction applied)
@@ -310,11 +387,18 @@ String getGyroReadings() {
     mpu.getEvent(&a, &g, &temp);
     float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
     float corrGx, corrGy, corrGz;
-    // Adjust axes to correct orientation
+    // Adjust gyroscope axes to correct orientation using the helper function
     correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
-    if (fabs(corrGx) > gyroXerror) { gyroX += corrGx / 50.00; }
-    if (fabs(corrGy) > gyroYerror) { gyroY += corrGy / 70.00; }
-    if (fabs(corrGz) > gyroZerror) { gyroZ += corrGz / 90.00; }
+    // Increment the global gyro accumulators if the change is above noise threshold
+    if (fabs(corrGx) > gyroXerror) {
+      gyroX += corrGx / 30.00;
+    }
+    if (fabs(corrGy) > gyroYerror) {
+      gyroY += corrGy / 30.00;
+    }
+    if (fabs(corrGz) > gyroZerror) {
+      gyroZ += corrGz / 30.00;
+    }
     StaticJsonDocument<200> doc;
     doc["gyroX"] = gyroX;
     doc["gyroY"] = gyroY;
@@ -474,7 +558,7 @@ void handleFiles() {
 #ifdef ESP32
       time_t t = file.getLastWrite();
       if (t > 0) {
-        struct tm* tmInfo = localtime(&t);
+        struct tm *tmInfo = localtime(&t);
         char timeStr[26];
         strftime(timeStr, 26, "%Y-%m-%d %H:%M:%S", tmInfo);
         lastUpdated = String(timeStr);
@@ -517,7 +601,9 @@ void handleCombinedFileDownload() {
     return;
   }
   String filename = server.arg("name");
-  if (filename.charAt(0) != '/') { filename = "/" + filename; }
+  if (filename.charAt(0) != '/') {
+    filename = "/" + filename;
+  }
   if (SD_MMC.exists(filename.c_str())) {
     File file = SD_MMC.open(filename.c_str(), "r");
     if (!file) {
@@ -554,7 +640,9 @@ void handleCombinedFileDelete() {
     return;
   }
   String filename = server.arg("name");
-  if (filename.charAt(0) != '/') { filename = "/" + filename; }
+  if (filename.charAt(0) != '/') {
+    filename = "/" + filename;
+  }
   Serial.println("Attempting to delete file: " + filename);
   bool deleted = false;
   if (SD_MMC.exists(filename.c_str())) {
@@ -617,10 +705,12 @@ void handleFileUpload() {
 // SD Card File Upload Handler (uploads file to the SD card root)
 // ---------------------------------------------------------------------------
 void handleFileUploadSD() {
-  HTTPUpload& upload = server.upload();
+  HTTPUpload &upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     String filename = upload.filename;
-    if (!filename.startsWith("/")) { filename = "/" + filename; }
+    if (!filename.startsWith("/")) {
+      filename = "/" + filename;
+    }
     Serial.printf("SD Upload Start: %s\n", filename.c_str());
     File sdFile = SD_MMC.open(filename, FILE_WRITE);
     if (!sdFile) {
@@ -693,19 +783,61 @@ void handleSDFileDelete() {
 // Route Handler: Redirects to Visualization index page (for sensor mode switch)
 // ---------------------------------------------------------------------------
 void handleIndex() {
-  sensorModeFlight = false;  
-  server.sendHeader("Location", "/visualization/index.html");  
+  sensorModeFlight = false;  // Switch to visualization mode
+  server.sendHeader("Location", "/visualization/index.html");
   server.send(302, "text/plain", "Redirecting...");
 }
 
 // -----------------------
 // Function: correctAxes
 // -----------------------
-// This function swaps and inverts raw sensor axis values to correct for mounting orientation.
-void correctAxes(float rawX, float rawY, float rawZ, float& corrX, float& corrY, float& corrZ) {
-  corrX = rawY;
-  corrY = -rawX;
-  corrZ = rawZ;
+// This function swaps and inverts raw sensor axis values based on the chosen configuration.
+void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY, float &corrZ) {
+  switch (axisConfig) {
+    case 0:
+      // Default transformation (as currently implemented).
+      // Mapping: Swap x>X and y>Z and z>Y
+      corrX = rawX;
+      corrY = rawZ;
+      corrZ = rawY;
+      break;
+    case 1:
+      // Variant 1: Mapping: Swap x>X and y>Y and z>Z
+      corrX = rawX;
+      corrY = rawY;
+      corrZ = rawZ;
+      break;
+    case 2:
+      // Variant 2: Mapping: Swap x>Y and y>X and z>Z
+      corrX = rawY;
+      corrY = rawX;
+      corrZ = rawZ;
+      break;
+    case 3:
+      // Variant 3: Mapping: Swap x>Y and y>Z and z>X
+      corrX = rawY;
+      corrY = rawZ;
+      corrZ = rawX;
+      break;
+    case 4:
+      // Variant 4: Mapping: Swap x>Z and y>Y and z>X
+      corrX = rawZ;
+      corrY = rawY;
+      corrZ = rawX;
+      break;
+    case 5:
+      // Variant 5: Mapping Swap x>Z and y>X and z>Y
+      corrX = rawZ;
+      corrY = rawX;
+      corrZ = rawY;
+      break;
+    default:
+      // Fallback to the default transformation if an unrecognized value is used.
+      corrX = rawY;
+      corrY = rawZ;
+      corrZ = rawX;
+      break;
+  }
 }
 
 // -----------------------
@@ -796,7 +928,7 @@ String getTimeStampString() {
   if (lastSuccessfulNTP != 0) {
     unsigned long currentEpoch = lastSuccessfulNTP + ((millis() - lastSyncMillis) / 1000);
     time_t t = (time_t)currentEpoch;
-    struct tm* ti = localtime(&t);
+    struct tm *ti = localtime(&t);
     String yearStr = String(ti->tm_year + 1900);
     String monthStr = (ti->tm_mon + 1) < 10 ? "0" + String(ti->tm_mon + 1) : String(ti->tm_mon + 1);
     String dayStr = ti->tm_mday < 10 ? "0" + String(ti->tm_mday) : String(ti->tm_mday);
@@ -817,11 +949,12 @@ float getLocalSeaLevelPressure() {
 
 // ---------------------------------------------------------------------------
 // updatePressureFromAPI()
-// ---------------------------------------------------------------------------
+//
 // Updates local pressure using an API call to OpenWeatherMap. Falls back to EEPROM or default if necessary.
+// ---------------------------------------------------------------------------
 void updatePressureFromAPI() {
-  float localPressure = 1026.0;
-  bool apiSuccess = false;
+  float localPressure = 1013.25;
+
   HTTPClient http;
   String url = String(owmEndpoint) + "?lat=" + String(currentLatitude, 6) + "&lon=" + String(currentLongitude, 6) + "&exclude=minutely,hourly,daily,alerts&appid=" + String(openWeatherMapApiKey);
   http.begin(url);
@@ -839,7 +972,7 @@ void updatePressureFromAPI() {
         Serial.printf("API Error %d: %s\n", apiErrorCode, apiErrorMessage.c_str());
         PressureSource = "API Error";
       } else {
-        localPressure = doc["current"]["pressure"] | 1026.0;
+        localPressure = doc["current"]["pressure"];
         PressureSource = "API OpenWeather";
         EEPROM.put(EEPROM_PRESSURE_ADDR, localPressure);
         EEPROM.commit();
@@ -868,7 +1001,7 @@ void updatePressureFromAPI() {
       Serial.print("Using EEPROM Pressure: ");
       Serial.println(localPressure);
     } else {
-      localPressure = 1026.0;
+      localPressure = 1013.25;
       PressureSource = "Default Sea-Level";
       Serial.print("Using Default Sea-Level Pressure: ");
       Serial.println(localPressure);
@@ -962,7 +1095,7 @@ void calibrateSensors() {
 // ---------------------------------------------------------------------------
 // WebSocket Event Handler for real-time communication with the client dashboard
 // ---------------------------------------------------------------------------
-void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
+void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
       Serial.println("Client " + String(num) + " disconnected");
@@ -1011,7 +1144,13 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
             calibrateSensors();
             Serial.println("Sensors calibrated.");
           }
-          const char* command = doc["parachute"];
+          // Handle axis configuration update from the web interface
+          if (doc.containsKey("axisConfig")) {
+            axisConfig = doc["axisConfig"];
+            Serial.print("Axis configuration updated to: ");
+            Serial.println(axisConfig);
+          }
+          const char *command = doc["parachute"];
           Serial.println("Received parachute command from client " + String(num));
           if (String(command) == "Armed" && parachuteStatus != "armed") {
             parachuteArmed();
@@ -1020,33 +1159,28 @@ void webSocketEvent(byte num, WStype_t type, uint8_t* payload, size_t length) {
             parachuteRelease();
             Serial.println("Parachute release command processed.");
           }
+          // NEW: handle location updates
+          if (doc.containsKey("latitude") && doc.containsKey("longitude")) {
+            currentLatitude = doc["latitude"];
+            currentLongitude = doc["longitude"];
+            // 1) clear the flag
+            apiPressureUpdated = false;
+            // 2) fetch right away, using the new coords
+            updatePressureFromAPI();
+            // 3) push the fresh pressure + coords back to the page
+            StaticJsonDocument<128> out;
+            out["Latitude"] = currentLatitude;
+            out["Longitude"] = currentLongitude;
+            out["LocalPressure"] = lastLocalPressure;
+            out["PressureSource"] = PressureSource;
+            String s;
+            serializeJson(out, s);
+            webSocket.broadcastTXT(s);
+          }
         }
         Serial.println("");
         break;
       }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Delete old visualization files from SPIFFS to free space and avoid conflicts
-// ---------------------------------------------------------------------------
-void deleteOldVisualizationFiles() {
-  const char* filesToDelete[] = {
-    "/visualization/index.html",
-    "/visualization/style.css",
-    "/index.html.html",
-    "/visualization/script.js"
-  };
-  for (int i = 0; i < 3; i++) {
-    if (SPIFFS.exists(filesToDelete[i])) {
-      if (SPIFFS.remove(filesToDelete[i])) {
-        Serial.println(String("Deleted old file: ") + filesToDelete[i]);
-      } else {
-        Serial.println(String("Failed to delete: ") + filesToDelete[i]);
-      }
-    } else {
-      Serial.println(String("File not found (no need to delete): ") + filesToDelete[i]);
-    }
   }
 }
 
@@ -1062,7 +1196,6 @@ void setup() {
     Serial.println("An error occurred while mounting SPIFFS");
   } else {
     Serial.println("SPIFFS mounted successfully");
-    deleteOldVisualizationFiles();  // Clean up old visualization files if present
   }
 
   // Disable WiFi power saving mode
@@ -1089,16 +1222,23 @@ void setup() {
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
   }
-  if (WiFi.status() == WL_CONNECTED) { updatePressureFromAPI(); }
+  if (WiFi.status() == WL_CONNECTED) {
+    updatePressureFromAPI();
+  }
 
+  // 1) Load your storedPressure from EEPROM up front:
   EEPROM.begin(EEPROM_SIZE);
   float storedPressure;
   EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
-  if (storedPressure > 500.0 && storedPressure < 1100.0) {
+
+  // 2) Now do your three‑way branch:
+  if (apiSuccess == true) {
+    PressureSource = "API OpenWeather";
+  } else if (storedPressure > 500.0 && storedPressure < 1100.0) {
     lastLocalPressure = storedPressure;
     PressureSource = "EEPROM Memory";
   } else {
-    lastLocalPressure = 1026.0;
+    lastLocalPressure = 1013.25;
     PressureSource = "Default Sea-Level Pressure";
   }
 
@@ -1128,7 +1268,9 @@ void setup() {
     timestamp.replace(":", "");
     timestamp.replace(" ", "_");
     String newLogFile = "/" + timestamp + ".csv";
-    if (SD_MMC.exists(newLogFile.c_str())) { SD_MMC.remove(newLogFile.c_str()); }
+    if (SD_MMC.exists(newLogFile.c_str())) {
+      SD_MMC.remove(newLogFile.c_str());
+    }
     if (SD_MMC.exists(oldLogFile.c_str())) {
       if (SD_MMC.rename(oldLogFile.c_str(), newLogFile.c_str())) {
         Serial.println("Previous log file renamed to " + newLogFile);
@@ -1159,17 +1301,25 @@ void setup() {
   // -----------------------
   if (mpu.begin(0x68)) {
     mpuFound = true;
-    if (showSensorInitLog) { Serial.println("MPU6050 sensor found."); }
+    if (showSensorInitLog) {
+      Serial.println("MPU6050 sensor found.");
+    }
   } else {
     mpuFound = false;
-    if (showSensorInitLog) { Serial.println("Could not find MPU6050 sensor. Check wiring!"); }
+    if (showSensorInitLog) {
+      Serial.println("Could not find MPU6050 sensor. Check wiring!");
+    }
   }
   if (bmp.begin(0x76)) {
     bmpFound = true;
-    if (showSensorInitLog) { Serial.println("BMP280 sensor found."); }
+    if (showSensorInitLog) {
+      Serial.println("BMP280 sensor found.");
+    }
   } else {
     bmpFound = false;
-    if (showSensorInitLog) { Serial.println("Could not find BMP280 sensor. Check wiring!"); }
+    if (showSensorInitLog) {
+      Serial.println("Could not find BMP280 sensor. Check wiring!");
+    }
   }
   if (mpuFound) {
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
@@ -1240,23 +1390,59 @@ void setup() {
   server.serveStatic("/visualization/", SPIFFS, "/");
 
   // File management endpoints: file listing, upload, deletion, and download for both SD and SPIFFS.
-  server.on("/files", []() { handleFiles(); });
-  server.on("/deleteFile", HTTP_GET, []() { handleCombinedFileDelete(); });
-  server.on("/deleteFileSPIFFS", HTTP_GET, []() { handleSPIFFSFileDelete(); });
-  server.on("/deleteFileSD", HTTP_GET, []() { handleSDFileDelete(); });
-  server.on("/downloadFile", HTTP_GET, []() { handleCombinedFileDownload(); });
-  server.on("/upload", HTTP_POST, []() { server.send(200, "text/plain", "SPIFFS Upload Successful"); }, handleFileUpload);
-  server.on("/uploadsd", HTTP_POST, []() { server.send(200, "text/plain", "SD Card Upload Successful"); }, handleFileUploadSD);
+  server.on("/files", []() {
+    handleFiles();
+  });
+  server.on("/deleteFile", HTTP_GET, []() {
+    handleCombinedFileDelete();
+  });
+  server.on("/deleteFileSPIFFS", HTTP_GET, []() {
+    handleSPIFFSFileDelete();
+  });
+  server.on("/deleteFileSD", HTTP_GET, []() {
+    handleSDFileDelete();
+  });
+  server.on("/downloadFile", HTTP_GET, []() {
+    handleCombinedFileDownload();
+  });
+  server.on(
+    "/upload", HTTP_POST, []() {
+      server.send(200, "text/plain", "SPIFFS Upload Successful");
+    },
+    handleFileUpload);
+  server.on(
+    "/uploadsd", HTTP_POST, []() {
+      server.send(200, "text/plain", "SD Card Upload Successful");
+    },
+    handleFileUploadSD);
 
   // Sensor endpoints: serve gyro, accelerometer, and temperature data.
-  server.on("/gyro", HTTP_GET, []() { server.send(200, "application/json", getGyroReadings()); });
-  server.on("/acc", HTTP_GET, []() { server.send(200, "application/json", getAccReadings()); });
-  server.on("/temp", HTTP_GET, []() { server.send(200, "text/plain", getTemperatureReading()); });
+  server.on("/gyro", HTTP_GET, []() {
+    server.send(200, "application/json", getGyroReadings());
+  });
+  server.on("/acc", HTTP_GET, []() {
+    server.send(200, "application/json", getAccReadings());
+  });
+  server.on("/temp", HTTP_GET, []() {
+    server.send(200, "text/plain", getTemperatureReading());
+  });
   // Reset endpoints for individual gyro components.
-  server.on("/reset", HTTP_GET, []() { gyroX = gyroY = gyroZ = 0; server.send(200, "text/plain", "All gyro values reset"); });
-  server.on("/resetX", HTTP_GET, []() { gyroX = 0; server.send(200, "text/plain", "Gyro X reset"); });
-  server.on("/resetY", HTTP_GET, []() { gyroY = 0; server.send(200, "text/plain", "Gyro Y reset"); });
-  server.on("/resetZ", HTTP_GET, []() { gyroZ = 0; server.send(200, "text/plain", "Gyro Z reset"); });
+  server.on("/reset", HTTP_GET, []() {
+    gyroX = gyroY = gyroZ = 0;
+    server.send(200, "text/plain", "All gyro values reset");
+  });
+  server.on("/resetX", HTTP_GET, []() {
+    gyroX = 0;
+    server.send(200, "text/plain", "Gyro X reset");
+  });
+  server.on("/resetY", HTTP_GET, []() {
+    gyroY = 0;
+    server.send(200, "text/plain", "Gyro Y reset");
+  });
+  server.on("/resetZ", HTTP_GET, []() {
+    gyroZ = 0;
+    server.send(200, "text/plain", "Gyro Z reset");
+  });
 
   server.begin();
   webSocket.begin();
@@ -1269,10 +1455,12 @@ void setup() {
 void loop() {
   server.handleClient();
   webSocket.loop();
-  
+
   // Update pressure from API if connected, or flag for future update if not
   if (WiFi.status() == WL_CONNECTED) {
-    if (!apiPressureUpdated) { updatePressureFromAPI(); }
+    if (!apiPressureUpdated) {
+      updatePressureFromAPI();
+    }
   } else {
     apiPressureUpdated = false;
   }
@@ -1289,15 +1477,21 @@ void loop() {
 
   // Calculate relative altitude based on baseline if parachute is armed
   float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
-  if (absoluteAltitude > maxAbsoluteAltitude) maxAbsoluteAltitude = absoluteAltitude;
-  if (absoluteAltitude < minAbsoluteAltitude) minAbsoluteAltitude = absoluteAltitude;
-  if (relativeAltitude > maxRelativeAltitude) maxRelativeAltitude = relativeAltitude;
-  if (relativeAltitude < minRelativeAltitude) minRelativeAltitude = relativeAltitude;
+  if (absoluteAltitude > maxAbsoluteAltitude)
+    maxAbsoluteAltitude = absoluteAltitude;
+  if (absoluteAltitude < minAbsoluteAltitude)
+    minAbsoluteAltitude = absoluteAltitude;
+  if (relativeAltitude > maxRelativeAltitude)
+    maxRelativeAltitude = relativeAltitude;
+  if (relativeAltitude < minRelativeAltitude)
+    minRelativeAltitude = relativeAltitude;
 
   // Calculate altitude drop based on armed state
   float altitudeDrop = (parachuteStatus == "armed") ? armedMaxRelativeAltitude - relativeAltitude : maxRelativeAltitude - relativeAltitude;
-  if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
-  if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
+  if (altitudeDrop > maxAltitudeDrop)
+    maxAltitudeDrop = altitudeDrop;
+  if (altitudeDrop < minAltitudeDrop)
+    minAltitudeDrop = altitudeDrop;
 
   // Calculate corrected accelerometer readings subtracting calibration offsets
   float corrAx, corrAy, corrAz;
@@ -1370,7 +1564,7 @@ void loop() {
   char dataString[512];
   String currentTimestamp = getTimeStampString();
   snprintf(dataString, sizeof(dataString),
-           "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1026.00,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu\n",
+           "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1013.25,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu\n",
            currentTimestamp.c_str(),
            bmpTemp,
            bmp.readPressure() / 100.0F,
@@ -1394,7 +1588,9 @@ void loop() {
            maxAltitudeDrop,
            minAltitudeDrop,
            totalSpace,
-           usedSpace);
+           usedSpace,
+           currentLatitude,
+           currentLongitude);
   appendFile(SD_MMC, "/log.csv", dataString);
 
   // Check trigger conditions if the system is armed to possibly deploy the parachute
@@ -1405,7 +1601,9 @@ void loop() {
     bool triggerAccZ = (fabs(relAccZ) >= accZThreshold);
     bool triggerCondition = useAndLogic ? (triggerAlt && triggerAccX && triggerAccY && triggerAccZ)
                                         : (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
-    if (triggerCondition) { parachuteRelease(); }
+    if (triggerCondition) {
+      parachuteRelease();
+    }
   }
 
   // -----------------------
@@ -1413,7 +1611,7 @@ void loop() {
   // -----------------------
   if (sensorModeFlight) {
     static unsigned long previousMillis = 0;
-    int interval = 50;
+    int interval = 40;
     unsigned long nowMillis = millis();
     if ((nowMillis - previousMillis) > interval) {
       String jsonString = "";
@@ -1430,10 +1628,18 @@ void loop() {
       object["AccX"] = relAccX;
       object["AccY"] = relAccY;
       object["AccZ"] = relAccZ;
-      object["Gyroscope"] = String(g.gyro.x) + "; " + String(g.gyro.y) + "; " + String(g.gyro.z);
+      {
+        // --- BEGIN MODIFICATION 1 ---
+        // Instead of sending the raw gyroscope values, apply the same axis correction as used in getGyroReadings().
+        float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
+        float corrGx, corrGy, corrGz;
+        correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
+        object["Gyroscope"] = String(corrGx) + "; " + String(corrGy) + "; " + String(corrGz);
+        // --- END MODIFICATION 1 ---
+      }
       object["ParachuteStatus"] = parachuteStatus;
       object["LocalPressure"] = lastLocalPressure;
-      object["DefaultSeaLevelPressure"] = 1026.0;
+      object["DefaultSeaLevelPressure"] = 1013.25;
       object["PressureSource"] = PressureSource;
       object["MaxAbsAltitude"] = maxAbsoluteAltitude;
       object["MinAbsAltitude"] = minAbsoluteAltitude;
@@ -1446,6 +1652,9 @@ void loop() {
       object["TriggerLogic"] = useAndLogic ? "AND" : "OR";
       object["TotalSpace"] = totalSpace;
       object["UsedSpace"] = usedSpace;
+      object["Latitude"] = currentLatitude;
+      object["Longitude"] = currentLongitude;
+      object["SensorModeFlight"] = sensorModeFlight;
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
@@ -1468,5 +1677,5 @@ void loop() {
       lastTimeTemperature = millis();
     }
   }
-  delay(50);
+  delay(40);
 }
