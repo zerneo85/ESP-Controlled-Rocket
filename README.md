@@ -51,7 +51,7 @@ The **ESP Controlled Rocket** project combines state-of-the-art embedded firmwar
   - Uses NTP to obtain accurate time for timestamping logs and events.  
 - **Web-Based File Management:**  
   - Provides a web interface to manage onboard files on both the ESP32’s internal SPIFFS flash and the SD card (supports file upload, download, and deletion).  
-- **3D Visualization Support (Optional):**  
+- **3D Visualization Support:**  
   - Streams orientation and telemetry data suitable for an optional 3D visualization tool to display the rocket’s attitude in real time (experimental feature, not required for core functionality).  
 - **Configurable Axis Orientation:**  
   - The sensor axis alignment can be adjusted at runtime via the web interface to accommodate different board mounting orientations.  
@@ -67,8 +67,16 @@ The flight computer firmware is organized into modules that handle:
 - **Parachute Control**  
 - **LED Status Indicators**  
 - **Communication**  
-- **Logging**  
+- **Web-Based File Management**  
+- **3D Visualization Support**  
+- **Logging**
+- **Configurable Axis Orientation**  
+- **Live Location Overrides**  
 - **OTA Updates**
+
+
+### Flight Computer, file manager and visualization dashboards video
+![All dashboards video](media/all_dashboards.mp4)
 
 ### Flight Computer Screenshot
 ![Flight Computer Screenshot](media/flight_computer_dashboard_6.png)

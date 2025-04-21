@@ -60,7 +60,7 @@ bool apiSuccess = false;
 bool debugSerial = false;      // Enable/disable serial debug printing
 bool sensorModeFlight = true;  // true: Flight sensor mode; false: Visualization mode
 
-int axisConfig = 0;  // 0 = default mapping, 1 = alternative mapping (or more states as needed)
+int axisConfig = 3;  // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 
 // SD card storage info
 uint64_t totalSpace;
@@ -86,9 +86,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "API_KEY";  // Anonymized API key
-float currentLatitude = 52.37918711316107;                              // Anonymized Latitude
-float currentLongitude = 4.899939919126087;                              // Anonymized Longitude
+const char *openWeatherMapApiKey = "9732aa1f7a2374820e152ab549ec9349";  // Anonymized API key
+float currentLatitude = 52.03323004349591;                              // Anonymized Latitude
+float currentLongitude = 4.36483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -187,36 +187,92 @@ const char *webpage = R"rawliteral(
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <title>Flight Computer</title>
   <style>
-    /* CSS styling for the flight data page */
-    body{background-color:#EEEEEE;
-         font-family:Arial,sans-serif;
-         color:#003366;
-         margin:0;padding:20px}
-    h1{text-align:center;margin-bottom:20px}
-    .data-table{margin:0 auto;
-                border-collapse:collapse;
-                width:90%;max-width:600px;
-                background-color:#FFF;
-                box-shadow:0 0 10px rgba(0,0,0,0.1)}
-    .data-table th,.data-table td{padding:12px 15px;
-                                  border:1px solid #CCC;
-                                  text-align:left}
-    .data-table th{background-color:#003366;color:#FFF}
-    .data-table tr:nth-child(even){background-color:#F9F9F9}
-    .button-container{text-align:center;margin-top:20px}
-    button{background-color:#003366;
-           color:#FFF;
-           border:none;
-           padding:10px 20px;
-           font-size:16px;
-           cursor:pointer}
-    button:hover{background-color:#0055AA}
-    input[type='number'],select{padding:8px;
-                               font-size:16px;
-                               width:150px;
-                               margin-right:10px;
-                               margin-top:5px}
-  </style>
+  /* Base page styling */
+  body {
+    background-color: #EEEEEE;
+    font-family: Arial, sans-serif;
+    color: #003366;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  /* Data table */
+  .data-table {
+    margin: 0 auto;
+    border-collapse: collapse;
+    width: 90%;
+    max-width: 600px;
+    background-color: #FFF;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  .data-table th,
+  .data-table td {
+    padding: 12px 15px;
+    border: 1px solid #CCC;
+    text-align: left;
+  }
+  .data-table th {
+    background-color: #003366;
+    color: #FFF;
+  }
+  .data-table tr:nth-child(even) {
+    background-color: #F9F9F9;
+  }
+
+  /* Buttons */
+  .button-container {
+    text-align: center;
+    margin-top: 20px;
+  }
+  button {
+    background-color: #003366;
+    color: #FFF;
+    border: none;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:hover {
+    background-color: #0055AA;
+  }
+
+  /* Generic input/select fallback */
+  input[type='number'],
+  select {
+    padding: 8px;
+    font-size: 16px;
+    width: 75px;      /* applies to all number inputs & selects by default */
+    margin-right: 10px;
+    margin-top: 5px;
+  }
+
+  /* Lat/Lon inputs: ~10 characters wide */
+  #latitude,
+  #longitude {
+    width: 18ch;
+    min-width: 18ch;
+    max-width: 100%;
+  }
+
+  /* Set width of Altitude Drop, Acc X/Y/Z, Trigger Logic inputs to ~3 characters */
+  #newAltThreshold, #newAccX, #newAccY, #newAccZ, #triggerLogic {
+    width: 6ch;
+    min-width: 6ch;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  /* Axis Mapping dropdown: ~30 characters wide */
+  #axisConfig {
+    width: 30ch;
+    max-width: 100%;
+  }
+</style>
+
 </head>
 <body>
   <h1>Flight Information</h1>
@@ -253,6 +309,8 @@ const char *webpage = R"rawliteral(
     <tr><td>Sensor Mode Flight</td><td id='SensorModeFlight'>-</td></tr>
     <tr><td>Latitude</td><td id="currentLatitude">-</td></tr>
 <tr><td>Longitude</td><td id="currentLongitude">-</td></tr>
+<tr><td>Axis Mapping Configuration</td><td id="axisConfigDisplay">-</td></tr>
+
   </table>
 
   <div class='button-container'>
@@ -261,15 +319,29 @@ const char *webpage = R"rawliteral(
     <button id='BTN_CALIBRATE' onclick="button_calibrate()">Calibrate Sensors</button>
   </div>
 
-  <!-- Latitude/Longitude inputs -->
-  <div class='button-container'>
-    <label for='latitude'>Latitude:</label>
-    <input type='number' id='latitude' step='0.000001' value='52.033230' placeholder='Latitude'>
-    <label for='longitude'>Longitude:</label>
-    <input type='number' id='longitude' step='0.000001' value='4.364834' placeholder='Longitude'>
-    <button id='BTN_SET_LOCATION' onclick="button_update_location()">Set Location</button>
-  </div>
-
+<!-- Latitude/Longitude inputs -->
+<div class="button-container">
+  <label for="latitude">Latitude:</label>
+  <input
+    type="number"
+    id="latitude"
+    step="0.000001"
+    value="52.03323004349591"
+    placeholder="Latitude"
+    size="15"
+  >
+  <label for="longitude">Longitude:</label>
+  <input
+    type="number"
+    id="longitude"
+    step="0.000001"
+    value="4.36483383178711"
+    placeholder="Longitude"
+    size="15"
+  >
+  <button id="BTN_SET_LOCATION" onclick="button_update_location()">Set Location</button>
+</div>
+    
   <div class='button-container'>
     <label for='newAltThreshold'>Altitude Drop:</label>
     <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
@@ -371,6 +443,7 @@ const char *webpage = R"rawliteral(
     document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
 document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
 document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
+document.getElementById('axisConfigDisplay').innerText = d.axisConfigText;
   }
   window.onload = init;
 </script>
@@ -784,6 +857,8 @@ void handleSDFileDelete() {
 // ---------------------------------------------------------------------------
 void handleIndex() {
   sensorModeFlight = false;  // Switch to visualization mode
+    setAllLEDs(purpleColor);
+  strip.show();
   server.sendHeader("Location", "/visualization/index.html");
   server.send(302, "text/plain", "Redirecting...");
 }
@@ -1655,6 +1730,7 @@ void loop() {
       object["Latitude"] = currentLatitude;
       object["Longitude"] = currentLongitude;
       object["SensorModeFlight"] = sensorModeFlight;
+       object["Axis Config"] = axisConfig;
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
