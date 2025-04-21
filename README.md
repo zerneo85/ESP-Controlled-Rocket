@@ -76,7 +76,7 @@ The flight computer firmware is organized into modules that handle:
 
 
 ### Flight Computer, file manager and visualization dashboards video
-![All dashboards video](media/all_dashboards.mp4)
+![All dashboards video](media/all_dashboards.gif)
 
 ### Flight Computer Screenshot
 ![Flight Computer Screenshot](media/flight_computer_dashboard_6.png)
