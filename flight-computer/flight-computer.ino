@@ -7,20 +7,19 @@
  *  - Minor improvements to code readability and structure.
  *  - Corrected Axis
 
-
   ┌─────────────────────────────────────────────────────────────────────────┐
   │                         LED Behavior Summary                          │
   └─────────────────────────────────────────────────────────────────────────┘
 
   • Color Wheel Indices (0–255 → RGB via strip.Wheel(index)):
       0   → red
-     40   → orange
+     30   → orange
      85   → green
     125   → aqua
     170   → blue
-    210   → purple
+    200   → purple
 
-  • Functions:
+  • Core LED Functions:
       setAllLEDs(color)
         – color: 24-bit RGB value
 
@@ -31,7 +30,7 @@
 
       showLEDColorsSequentially(color, direction, rotations)
         – color: 24-bit RGB
-        – direction: +1 = ascending LED index, –1 = descending
+        – direction: +1 = ascending index, –1 = descending
         – rotations: full passes across all LEDs
 
       showRainbowCycle(wait, direction, rotations)
@@ -39,7 +38,7 @@
         – direction: +1 forward through hue wheel, –1 backward
         – rotations: number of full rainbow cycles
 
-  • Sequences:
+  • Main Sequences:
       – Startup (unarmed):
           setAllLEDs(blueColor);                // solid blue
 
@@ -47,20 +46,35 @@
           if connected: blinkColor(greenColor,5,250);  // 5 green blinks @250ms
           else:        blinkColor(orangeColor,5,250); // 5 orange blinks @250ms
 
-      – Arm (parachuteStatus = “armed”):
-          showLEDColorsSequentially(redColor,  1, 3); // seq. red, forward, 3 rot.
-          setAllLEDs(redColor);                     // solid red
+      – Parachute Armed:
+          showLEDColorsSequentially(redColor,  1, 3); // seq. red forward, 3 rot.
+          setAllLEDs(redColor);                       // solid red
 
-      – Release (parachuteStatus = “released”):
-          showLEDColorsSequentially(greenColor, -1, 3); // seq. green, reverse, 3 rot.
-          blinkColor(greenColor, 5, 250);                // 5 green blinks @250ms
+      – Parachute Released:
+          blinkColor(greenColor,5,100);                // 5 green blinks @100ms
+          showLEDColorsSequentially(greenColor, -1, 2); // seq. green reverse, 2 rot.
+          setAllLEDs(greenColor);                      // solid green
 
-      – Calibrate:
-           showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange, forward, 1 rot.
-          showRainbowCycle(50, -1, 1);  // rainbow, reverse, 1 cycle
+      – Calibrate Sensors:
+          showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange forward, 1 rot.
+          showLEDColorsSequentially(orangeColor, -1, 1); // seq. orange reverse, 1 rot.
 
-      – Visualization mode switch:
-          setAllLEDs(purpleColor);      // solid purple
+      – Visualization Mode:
+          setAllLEDs(purpleColor);                 // solid purple
+
+  • File Management & Endpoint Indicators:
+      – File Manager (/files):
+          setAllLEDs(orangeColor);                 // solid orange
+
+      – Delete File:
+          blinkColor(redColor, 2, 250);            // 2 red blinks @250ms
+
+      – Download File:
+          blinkColor(purpleColor, 2, 250);         // 2 purple blinks @250ms
+
+      – Upload (SPIFFS or SD):
+          blinkColor(greenColor, 2, 250);          // 2 green blinks @250ms
+
 */
 
 
@@ -317,8 +331,8 @@ const char *webpage = R"rawliteral(
 
   /* Set width of Altitude Drop, Acc X/Y/Z, Trigger Logic inputs to ~3 characters */
   #newAltThreshold, #newAccX, #newAccY, #newAccZ, #triggerLogic {
-    width: 6ch;
-    min-width: 6ch;
+    width: 10ch;
+    min-width: 8ch;
     max-width: 100%;
     text-align: left;
   }
@@ -912,13 +926,11 @@ void handleSDFileDelete() {
 // ---------------------------------------------------------------------------
 // Route Handler: Redirects to Visualization index page (for sensor mode switch)
 // ---------------------------------------------------------------------------
-void handleIndex() {
-  sensorModeFlight = false;  // Switch to visualization mode
-    setAllLEDs(purpleColor);
-  //strip.show();
-  server.sendHeader("Location", "/visualization/index.html");
-  server.send(302, "text/plain", "Redirecting...");
-}
+//void handleIndex() {
+//
+//  server.sendHeader("Location", "/visualization/index.html");
+//  server.send(302, "text/plain", "Redirecting...");
+//}
 
 // -----------------------
 // Function: correctAxes
@@ -980,10 +992,10 @@ void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY,
 void initLEDColors() {
   redColor = strip.Wheel(0);
   blueColor = strip.Wheel(170);
-  purpleColor = strip.Wheel(210);
+  purpleColor = strip.Wheel(200);
   greenColor = strip.Wheel(85);
   aquaColor = strip.Wheel(125);
-  orangeColor = strip.Wheel(40);
+  orangeColor = strip.Wheel(30);
 }
 
 // Set all LEDs to a specific color
@@ -1157,8 +1169,6 @@ void updatePressureFromAPI() {
 // Executes a parachute release sequence with servo actuation and logs the event.
 void parachuteRelease() {
   Serial.println("Trigger condition met! Releasing parachute...");
-    showLEDColorsSequentially(greenColor, -1, 3);
-  //  strip.show();
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
@@ -1167,7 +1177,10 @@ void parachuteRelease() {
     parachuteservo.write(180);
   }
   parachuteStatus = "released";
-  blinkColor(greenColor, 5, 250);
+  blinkColor(greenColor, 5, 100);
+      showLEDColorsSequentially(greenColor, -1, 2);
+  //  strip.show();
+
     setAllLEDs(greenColor);
  // strip.show();
 }
@@ -1175,7 +1188,7 @@ void parachuteRelease() {
 // Arms the parachute system, captures baseline altitude, and initializes sensor calibration.
 void parachuteArmed() {
   Serial.println("Arming parachute...");
-     showLEDColorsSequentially(redColor, 1, 3);
+
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
@@ -1196,7 +1209,7 @@ void parachuteArmed() {
   parachuteservo.write(0);
   parachuteStatus = "armed";
 
-  delay(3000);
+     showLEDColorsSequentially(redColor, 1, 3);
   setAllLEDs(redColor);
  // strip.show();
 }
@@ -1207,8 +1220,7 @@ void calibrateSensors() {
   parachutePreStatus = parachuteStatus;
   parachuteStatus = "calibrating";
   Serial.println("Parachute status set to 'calibrating' for calibration.");
- showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange, forward, 1 rot.
- setAllLEDs(0); 
+
 //   strip.show();
   baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   baselineCaptured = true;
@@ -1225,15 +1237,28 @@ void calibrateSensors() {
   minAltitudeDrop = 1000000.0;
   Serial.print("Calibration complete. Baseline altitude: ");
   Serial.println(baselineAltitude);
+   showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange, forward, 1 rot.
  showLEDColorsSequentially(orangeColor,  -1, 1); // seq. orange, reverse, 1 rot.
  //  strip.show();
 
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
+  // If we’re back to “armed”, show solid red LEDs:
+  if (parachuteStatus == "armed") {
+    setAllLEDs(redColor);
+  }
+    if (parachuteStatus == "unarmed") {
+    setAllLEDs(blueColor);
+  }
+      if (parachuteStatus == "released") {
+    setAllLEDs(greenColor);
+  }
+
   // Reset sensor mode to Flight mode after calibration
   sensorModeFlight = true;
   Serial.print("Reset sensor mode to Flight");
   Serial.println(sensorModeFlight);
+  
 }
 
 // ---------------------------------------------------------------------------
@@ -1522,41 +1547,57 @@ void setup() {
   setAllLEDs(blueColor);
  // strip.show();
 
-  // -----------------------
-  // Register Web Server Endpoints
-  // -----------------------
-  // Root route: serves static flight information page
-  server.on("/", HTTP_GET, []() {
-    server.send(200, "text/html", webpage);
-  });
+// -----------------------
+// Register Web Server Endpoints
+// -----------------------
+// Root route: serves static flight information page
+server.on("/", HTTP_GET, []() {
+  sensorModeFlight = true;    // ← switch back into flight‐mode
+  setAllLEDs(blueColor);      // ← (optional) restore flight-mode LED color
+  server.send(200, "text/html", webpage);
+});
 
-  // Route for visualization: triggers sensor mode switch and redirects
-  server.on("/visualization", HTTP_GET, handleIndex);
-  server.serveStatic("/visualization/", SPIFFS, "/");
+// Inline visualization‐mode handler:
+server.on("/visualization", HTTP_GET, []() {
+  sensorModeFlight = false;    // enter visualization mode
+  setAllLEDs(purpleColor);     // paint LEDs purple
+  // strip.show();             // only if your setAllLEDs() doesn't call show()
+  server.sendHeader("Location", "/visualization/index.html");
+  server.send(302, "text/plain", "Redirecting...");
+});
+
+// Serve the static visualization files from SPIFFS
+server.serveStatic("/visualization/", SPIFFS, "/");
+
 
   // File management endpoints: file listing, upload, deletion, and download for both SD and SPIFFS.
   server.on("/files", []() {
+    setAllLEDs(orangeColor);      // ← (optional) set maintance color LED color  
     handleFiles();
   });
   server.on("/deleteFile", HTTP_GET, []() {
+   blinkColor(redColor, 2, 250);
     handleCombinedFileDelete();
   });
   server.on("/deleteFileSPIFFS", HTTP_GET, []() {
+       blinkColor(redColor, 2, 250);
     handleSPIFFSFileDelete();
   });
   server.on("/deleteFileSD", HTTP_GET, []() {
+       blinkColor(redColor, 2, 250);
     handleSDFileDelete();
   });
   server.on("/downloadFile", HTTP_GET, []() {
+       blinkColor(purpleColor, 2, 250);
     handleCombinedFileDownload();
   });
-  server.on(
-    "/upload", HTTP_POST, []() {
+  server.on("/upload", HTTP_POST, []() {
+     blinkColor(greenColor, 2, 250);
       server.send(200, "text/plain", "SPIFFS Upload Successful");
     },
     handleFileUpload);
-  server.on(
-    "/uploadsd", HTTP_POST, []() {
+  server.on("/uploadsd", HTTP_POST, []() {
+      blinkColor(greenColor, 2, 250);
       server.send(200, "text/plain", "SD Card Upload Successful");
     },
     handleFileUploadSD);

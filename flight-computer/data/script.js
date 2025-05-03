@@ -232,3 +232,10 @@ function resetPosition(element) {
   console.log("Reset: " + element.id);
   xhr.send();
 }
+
+
+// go back to the main site
+document.getElementById('back').addEventListener('click', () => {
+  sensorModeFlight = true;      // switch to sensor-mode
+  window.location.href = '/';   // navigate home
+});

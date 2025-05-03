@@ -1,21 +1,22 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
   <title>Flight Computer - Visualization</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" type="text/css" href="style.css">
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" 
-        integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" 
-        crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css"
+    integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/107/three.min.js"></script>
 </head>
+
 <body>
   <div class="topnav">
     <h1><i class="far fa-compass"></i>Flight Computer - Visualization <i class="far fa-compass"></i></h1>
   </div>
-  
+
   <div class="content">
     <div class="cards">
       <div class="card">
@@ -40,6 +41,9 @@
           <button id="resetY" onclick="resetPosition(this)">Y</button>
           <button id="resetZ" onclick="resetPosition(this)">Z</button>
         </p>
+        <p>
+          <button id="back">← Go to Main UI</button>
+        </p>
       </div>
       <div class="button-container">
         <label for="axisConfig">Axis Mapping Configuration:</label>
@@ -56,7 +60,7 @@
     </div>
     <div id="3Dcube" class="cube-content"></div>
   </div>
-      
+
   <script>
     // This function reads the currently selected axis mapping option from the dropdown
     // and sends an update message to the firmware via the WebSocket.
@@ -70,7 +74,8 @@
       console.log("Updated Axis Mapping to config: " + currentAxisConfig);
     }
   </script>
-  
+
   <script src="script.js"></script>
 </body>
+
 </html>

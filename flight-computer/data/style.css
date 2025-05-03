@@ -49,7 +49,7 @@ body {
   height: 300px; margin: auto;
   padding-top:2%;
 }
-#reset{
+#reset, #back{
   border: none;
   color: #FEFCFB;
   background-color: #003366;
