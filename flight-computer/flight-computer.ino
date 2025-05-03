@@ -7,7 +7,64 @@
  *  - Minor improvements to code readability and structure.
  *  - Corrected Axis
 
- */
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                         LED Behavior Summary                          │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  • Color Wheel Indices (0–255 → RGB via strip.Wheel(index)):
+      0   → red
+     40   → orange
+     85   → green
+    125   → aqua
+    170   → blue
+    210   → purple
+
+  • Functions:
+      setAllLEDs(color)
+        – color: 24-bit RGB value
+
+      blinkColor(color, times, delayms)
+        – color: 24-bit RGB
+        – times: number of on/off cycles
+        – delayms: ms between each on/off
+
+      showLEDColorsSequentially(color, direction, rotations)
+        – color: 24-bit RGB
+        – direction: +1 = ascending LED index, –1 = descending
+        – rotations: full passes across all LEDs
+
+      showRainbowCycle(wait, direction, rotations)
+        – wait: ms between frames
+        – direction: +1 forward through hue wheel, –1 backward
+        – rotations: number of full rainbow cycles
+
+  • Sequences:
+      – Startup (unarmed):
+          setAllLEDs(blueColor);                // solid blue
+
+      – Wi-Fi status:
+          if connected: blinkColor(greenColor,5,250);  // 5 green blinks @250ms
+          else:        blinkColor(orangeColor,5,250); // 5 orange blinks @250ms
+
+      – Arm (parachuteStatus = “armed”):
+          showLEDColorsSequentially(redColor,  1, 3); // seq. red, forward, 3 rot.
+          setAllLEDs(redColor);                     // solid red
+
+      – Release (parachuteStatus = “released”):
+          showLEDColorsSequentially(greenColor, -1, 3); // seq. green, reverse, 3 rot.
+          blinkColor(greenColor, 5, 250);                // 5 green blinks @250ms
+
+      – Calibrate:
+           showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange, forward, 1 rot.
+          showRainbowCycle(50, -1, 1);  // rainbow, reverse, 1 cycle
+
+      – Visualization mode switch:
+          setAllLEDs(purpleColor);      // solid purple
+*/
+
+
+
 
 // -----------------------
 // Library Inclusions
@@ -86,9 +143,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "9732aa1f7a2374820e152ab549ec9349";  // Anonymized API key
+const char *openWeatherMapApiKey = "API_KEY";  // Anonymized API key
 float currentLatitude = 52.03323004349591;                              // Anonymized Latitude
-float currentLongitude = 4.36483383178711;                              // Anonymized Longitude
+float currentLongitude = 4.33483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -858,7 +915,7 @@ void handleSDFileDelete() {
 void handleIndex() {
   sensorModeFlight = false;  // Switch to visualization mode
     setAllLEDs(purpleColor);
-  strip.show();
+  //strip.show();
   server.sendHeader("Location", "/visualization/index.html");
   server.send(302, "text/plain", "Redirecting...");
 }
@@ -941,18 +998,22 @@ void setAllLEDs(uint32_t color) {
 void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1) {
   for (uint16_t r = 0; r < rotations; r++) {
     for (uint16_t j = 0; j < 256; j++) {
+      // 1) Set *all* LED colors in RAM first:
       for (uint16_t i = 0; i < LEDS_COUNT; i++) {
         uint8_t wheelIndex = (((i * 256 / LEDS_COUNT) + (direction * j) + 256) % 256);
-        uint32_t color = strip.Wheel(wheelIndex);
+        uint32_t color     = strip.Wheel(wheelIndex);
         strip.setLedColorData(i, color);
-        strip.show();
-        delay(wait);
       }
+      // 2) Now *one* show() for the whole frame:
+      strip.show();
+      // 3) And a single delay:
+      delay(wait);
     }
     setAllLEDs(0);
     delay(500);
   }
 }
+
 
 // Sequentially display a color across the LED strip
 void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t rotations = 1) {
@@ -978,17 +1039,20 @@ void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t ro
 // Blink the entire LED strip with a specified color, number of times, and delay between blinks
 void blinkColor(uint32_t color, int times, int delayms) {
   for (int t = 0; t < times; t++) {
-    setAllLEDs(color);
+    setAllLEDs(color);   // update RAM buffer
+    strip.show();        // ← actually send the data to the LEDs
     delay(delayms);
-    setAllLEDs(0);
+    setAllLEDs(0);       // clear buffer
+    strip.show();        // ← turn LEDs off
     delay(delayms);
   }
 }
 
+
 // Indicate WiFi connection status via LED blinking (green if connected, orange if not)
 void indicateWiFiStatus(bool connected) {
   if (connected) {
-    blinkColor(greenColor, 5, 250);
+   blinkColor(greenColor, 5, 250);
   } else {
     blinkColor(orangeColor, 5, 250);
   }
@@ -1093,24 +1157,25 @@ void updatePressureFromAPI() {
 // Executes a parachute release sequence with servo actuation and logs the event.
 void parachuteRelease() {
   Serial.println("Trigger condition met! Releasing parachute...");
+    showLEDColorsSequentially(greenColor, -1, 3);
+  //  strip.show();
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.csv", eventLog);
   for (int i = 0; i < 2; i++) {
     parachuteservo.write(180);
-    delay(50);
-    parachuteservo.write(0);
   }
   parachuteStatus = "released";
   blinkColor(greenColor, 5, 250);
-  setAllLEDs(greenColor);
-  strip.show();
+    setAllLEDs(greenColor);
+ // strip.show();
 }
 
 // Arms the parachute system, captures baseline altitude, and initializes sensor calibration.
 void parachuteArmed() {
   Serial.println("Arming parachute...");
+     showLEDColorsSequentially(redColor, 1, 3);
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
@@ -1128,11 +1193,12 @@ void parachuteArmed() {
   minRelativeAltitude = 1000000.0;
   maxAltitudeDrop = 0;
   minAltitudeDrop = 1000000.0;
-  parachuteservo.write(180);
+  parachuteservo.write(0);
   parachuteStatus = "armed";
-  showLEDColorsSequentially(redColor, 1, 3);
+
+  delay(3000);
   setAllLEDs(redColor);
-  strip.show();
+ // strip.show();
 }
 
 // Calibrates sensors by capturing baseline altitude and accelerometer offsets.
@@ -1141,7 +1207,9 @@ void calibrateSensors() {
   parachutePreStatus = parachuteStatus;
   parachuteStatus = "calibrating";
   Serial.println("Parachute status set to 'calibrating' for calibration.");
-  showLEDColorsSequentially(purpleColor, -1, 1);
+ showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange, forward, 1 rot.
+ setAllLEDs(0); 
+//   strip.show();
   baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   baselineCaptured = true;
   sensors_event_t a, g, temp;
@@ -1157,8 +1225,9 @@ void calibrateSensors() {
   minAltitudeDrop = 1000000.0;
   Serial.print("Calibration complete. Baseline altitude: ");
   Serial.println(baselineAltitude);
-  showLEDColorsSequentially(purpleColor, 1, 1);
-  delay(1000);
+ showLEDColorsSequentially(orangeColor,  -1, 1); // seq. orange, reverse, 1 rot.
+ //  strip.show();
+
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
   // Reset sensor mode to Flight mode after calibration
@@ -1174,11 +1243,11 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
       Serial.println("Client " + String(num) + " disconnected");
-      blinkColor(redColor, 4, 300);
+   //   blinkColor(orangeColor, 4, 300);
       break;
     case WStype_CONNECTED:
       Serial.println("Client " + String(num) + " connected");
-      blinkColor(greenColor, 4, 300);
+    //  blinkColor(aquaColor, 4, 300);
       break;
     case WStype_TEXT:
       {
@@ -1442,6 +1511,7 @@ void setup() {
   delay(1000);
   initLEDColors();
   Serial.println("LED Colors Initialized");
+   strip.show();
   delay(1000);
   showLEDColorsSequentially(purpleColor, 1, 3);
   Serial.println("Sequential Display Done");
@@ -1450,7 +1520,7 @@ void setup() {
   Serial.println("Setup complete.");
   indicateWiFiStatus(WiFi.status() == WL_CONNECTED);
   setAllLEDs(blueColor);
-  strip.show();
+ // strip.show();
 
   // -----------------------
   // Register Web Server Endpoints
