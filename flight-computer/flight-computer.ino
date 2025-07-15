@@ -122,14 +122,20 @@ extern "C" {
 #define CHANNEL 0      // PWM channel (if applicable)
 Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
 
+
+
 // -----------------------
 // Macro Definitions & Global Variables
 // -----------------------
 #define EEPROM_SIZE 10          // EEPROM size
 #define EEPROM_PRESSURE_ADDR 0  // EEPROM address for storing pressure
+#define MIN_SPIFFS_FREE_PCT 15  // Define percentage free space SPIFF
+bool spiffsLoggingAllowed = false;
+bool alreadyWarned = false;
 bool apiSuccess = false;
 bool debugSerial = false;      // Enable/disable serial debug printing
 bool sensorModeFlight = true;  // true: Flight sensor mode; false: Visualization mode
+float spiffsFreePct = 100.0;
 
 int axisConfig = 3;  // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 
@@ -157,7 +163,7 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "API_KEY";  // Anonymized API key
+const char *openWeatherMapApiKey = "9732aa1f7a2374820e152ab549ec9349";  // Anonymized API key
 float currentLatitude = 52.03323004349591;                              // Anonymized Latitude
 float currentLongitude = 4.33483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
@@ -377,6 +383,8 @@ const char *webpage = R"rawliteral(
     <tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>
     <tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>
     <tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>
+    <tr><td>SPIFFS Total Space (KB)</td><td id='SPIFFSTotalSpace'>-</td></tr>
+<tr><td>SPIFFS Used Space (KB)</td><td id='SPIFFSUsedSpace'>-</td></tr>
     <tr><td>Sensor Mode Flight</td><td id='SensorModeFlight'>-</td></tr>
     <tr><td>Latitude</td><td id="currentLatitude">-</td></tr>
 <tr><td>Longitude</td><td id="currentLongitude">-</td></tr>
@@ -511,10 +519,14 @@ const char *webpage = R"rawliteral(
     document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic||'-';
     document.getElementById('TotalSpace').innerHTML = obj.TotalSpace||'-';
     document.getElementById('UsedSpace').innerHTML = obj.UsedSpace||'-';
+    document.getElementById('SPIFFSTotalSpace').innerHTML = obj.SPIFFSTotalSpace || '-';
+document.getElementById('SPIFFSUsedSpace').innerHTML = obj.SPIFFSUsedSpace || '-';
+
     document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
 document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
 document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
-document.getElementById('axisConfigDisplay').innerText = d.axisConfigText;
+document.getElementById('axisConfigDisplay').innerText = obj['Axis Config'];
+
   }
   window.onload = init;
 </script>
@@ -1013,7 +1025,7 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
       // 1) Set *all* LED colors in RAM first:
       for (uint16_t i = 0; i < LEDS_COUNT; i++) {
         uint8_t wheelIndex = (((i * 256 / LEDS_COUNT) + (direction * j) + 256) % 256);
-        uint32_t color     = strip.Wheel(wheelIndex);
+        uint32_t color = strip.Wheel(wheelIndex);
         strip.setLedColorData(i, color);
       }
       // 2) Now *one* show() for the whole frame:
@@ -1051,20 +1063,55 @@ void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t ro
 // Blink the entire LED strip with a specified color, number of times, and delay between blinks
 void blinkColor(uint32_t color, int times, int delayms) {
   for (int t = 0; t < times; t++) {
-    setAllLEDs(color);   // update RAM buffer
-    strip.show();        // ← actually send the data to the LEDs
+    setAllLEDs(color);  // update RAM buffer
+    strip.show();       // ← actually send the data to the LEDs
     delay(delayms);
-    setAllLEDs(0);       // clear buffer
-    strip.show();        // ← turn LEDs off
+    setAllLEDs(0);  // clear buffer
+    strip.show();   // ← turn LEDs off
     delay(delayms);
   }
+}
+
+// Set LEDs to alternating red and purple pattern
+void setWarningPatternLEDs() {
+  for (int i = 0; i < LEDS_COUNT; i++) {
+    if (i % 2 == 0) {
+      strip.setLedColorData(i, redColor);
+    } else {
+      strip.setLedColorData(i, purpleColor);
+    }
+  }
+  strip.show();
+}
+
+
+// Show the pattern as an animation first, then leave it on
+void animateWarningPatternLEDs() {
+  // Sequential animation, similar to showLEDColorsSequentially
+  for (int i = 0; i < LEDS_COUNT; i++) {
+    for (int j = 0; j <= i; j++) {
+      if (j % 2 == 0) {
+        strip.setLedColorData(j, redColor);
+      } else {
+        strip.setLedColorData(j, purpleColor);
+      }
+    }
+    // Set all the rest to off
+    for (int j = i + 1; j < LEDS_COUNT; j++) {
+      strip.setLedColorData(j, 0);
+    }
+    strip.show();
+    delay(80);  // Adjust delay for desired speed
+  }
+  // Leave all LEDs in pattern
+  setWarningPatternLEDs();
 }
 
 
 // Indicate WiFi connection status via LED blinking (green if connected, orange if not)
 void indicateWiFiStatus(bool connected) {
   if (connected) {
-   blinkColor(greenColor, 5, 250);
+    blinkColor(greenColor, 5, 250);
   } else {
     blinkColor(orangeColor, 5, 250);
   }
@@ -1162,6 +1209,36 @@ void updatePressureFromAPI() {
   apiPressureUpdated = true;
 }
 
+
+
+//
+// Check SPIFF Space and warn
+// ---------------------------------------------------------------------------
+void checkSpiffsSpaceAndWarn() {
+  size_t spiffsTotal = SPIFFS.totalBytes();
+  size_t spiffsUsed = SPIFFS.usedBytes();
+  spiffsFreePct = 100.0 * (float)(spiffsTotal - spiffsUsed) / (float)spiffsTotal;
+
+  if (spiffsFreePct < MIN_SPIFFS_FREE_PCT) {
+    if (!alreadyWarned) {
+      animateWarningPatternLEDs();
+      Serial.println("SPIFFS bijna vol! Logging naar SPIFFS wordt uitgeschakeld.");
+      alreadyWarned = true;
+    }
+    spiffsLoggingAllowed = false;
+  } else {
+    if (alreadyWarned) {
+      setAllLEDs(blueColor);              // Restore blue (startup/unarmed color)
+      parachuteStatus = "unarmed";        // Set state to unarmed
+      Serial.println("SPIFFS heeft weer voldoende ruimte, logging wordt hervat.");
+      alreadyWarned = false;
+    }
+    spiffsLoggingAllowed = true;
+  }
+}
+
+
+
 // ---------------------------------------------------------------------------
 // Actuation Functions for Parachute Deployment
 // ---------------------------------------------------------------------------
@@ -1172,17 +1249,22 @@ void parachuteRelease() {
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
+
   appendFile(SD_MMC, "/log.csv", eventLog);
+  if (spiffsLoggingAllowed) {
+    appendFile(SPIFFS, "/log.csv", eventLog);
+  }
+
   for (int i = 0; i < 2; i++) {
     parachuteservo.write(180);
   }
   parachuteStatus = "released";
   blinkColor(greenColor, 5, 100);
-      showLEDColorsSequentially(greenColor, -1, 2);
+  showLEDColorsSequentially(greenColor, -1, 2);
   //  strip.show();
 
-    setAllLEDs(greenColor);
- // strip.show();
+  setAllLEDs(greenColor);
+  // strip.show();
 }
 
 // Arms the parachute system, captures baseline altitude, and initializes sensor calibration.
@@ -1193,6 +1275,12 @@ void parachuteArmed() {
   String eventTimestamp = getTimeStampString();
   snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
   appendFile(SD_MMC, "/log.csv", eventLog);
+
+  checkSpiffsSpaceAndWarn();
+  if (spiffsLoggingAllowed) {
+    appendFile(SPIFFS, "/log.csv", eventLog);
+  }
+
   if (!baselineCaptured) {
     baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
     baselineCaptured = true;
@@ -1209,9 +1297,9 @@ void parachuteArmed() {
   parachuteservo.write(0);
   parachuteStatus = "armed";
 
-     showLEDColorsSequentially(redColor, 1, 3);
+  showLEDColorsSequentially(redColor, 1, 3);
   setAllLEDs(redColor);
- // strip.show();
+  // strip.show();
 }
 
 // Calibrates sensors by capturing baseline altitude and accelerometer offsets.
@@ -1221,7 +1309,7 @@ void calibrateSensors() {
   parachuteStatus = "calibrating";
   Serial.println("Parachute status set to 'calibrating' for calibration.");
 
-//   strip.show();
+  //   strip.show();
   baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   baselineCaptured = true;
   sensors_event_t a, g, temp;
@@ -1237,9 +1325,9 @@ void calibrateSensors() {
   minAltitudeDrop = 1000000.0;
   Serial.print("Calibration complete. Baseline altitude: ");
   Serial.println(baselineAltitude);
-   showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange, forward, 1 rot.
- showLEDColorsSequentially(orangeColor,  -1, 1); // seq. orange, reverse, 1 rot.
- //  strip.show();
+  showLEDColorsSequentially(orangeColor, 1, 1);   // seq. orange, forward, 1 rot.
+  showLEDColorsSequentially(orangeColor, -1, 1);  // seq. orange, reverse, 1 rot.
+                                                  //  strip.show();
 
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
@@ -1247,10 +1335,10 @@ void calibrateSensors() {
   if (parachuteStatus == "armed") {
     setAllLEDs(redColor);
   }
-    if (parachuteStatus == "unarmed") {
+  if (parachuteStatus == "unarmed") {
     setAllLEDs(blueColor);
   }
-      if (parachuteStatus == "released") {
+  if (parachuteStatus == "released") {
     setAllLEDs(greenColor);
   }
 
@@ -1258,7 +1346,6 @@ void calibrateSensors() {
   sensorModeFlight = true;
   Serial.print("Reset sensor mode to Flight");
   Serial.println(sensorModeFlight);
-  
 }
 
 // ---------------------------------------------------------------------------
@@ -1268,11 +1355,11 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
       Serial.println("Client " + String(num) + " disconnected");
-   //   blinkColor(orangeColor, 4, 300);
+      //   blinkColor(orangeColor, 4, 300);
       break;
     case WStype_CONNECTED:
       Serial.println("Client " + String(num) + " connected");
-    //  blinkColor(aquaColor, 4, 300);
+      //  blinkColor(aquaColor, 4, 300);
       break;
     case WStype_TEXT:
       {
@@ -1536,7 +1623,7 @@ void setup() {
   delay(1000);
   initLEDColors();
   Serial.println("LED Colors Initialized");
-   strip.show();
+  strip.show();
   delay(1000);
   showLEDColorsSequentially(purpleColor, 1, 3);
   Serial.println("Sequential Display Done");
@@ -1545,58 +1632,60 @@ void setup() {
   Serial.println("Setup complete.");
   indicateWiFiStatus(WiFi.status() == WL_CONNECTED);
   setAllLEDs(blueColor);
- // strip.show();
+  // strip.show();
 
-// -----------------------
-// Register Web Server Endpoints
-// -----------------------
-// Root route: serves static flight information page
-server.on("/", HTTP_GET, []() {
-  sensorModeFlight = true;    // ← switch back into flight‐mode
-  setAllLEDs(blueColor);      // ← (optional) restore flight-mode LED color
-  server.send(200, "text/html", webpage);
-});
+  // -----------------------
+  // Register Web Server Endpoints
+  // -----------------------
+  // Root route: serves static flight information page
+  server.on("/", HTTP_GET, []() {
+    sensorModeFlight = true;  // ← switch back into flight‐mode
+    setAllLEDs(blueColor);    // ← (optional) restore flight-mode LED color
+    server.send(200, "text/html", webpage);
+  });
 
-// Inline visualization‐mode handler:
-server.on("/visualization", HTTP_GET, []() {
-  sensorModeFlight = false;    // enter visualization mode
-  setAllLEDs(purpleColor);     // paint LEDs purple
-  // strip.show();             // only if your setAllLEDs() doesn't call show()
-  server.sendHeader("Location", "/visualization/index.html");
-  server.send(302, "text/plain", "Redirecting...");
-});
+  // Inline visualization‐mode handler:
+  server.on("/visualization", HTTP_GET, []() {
+    sensorModeFlight = false;  // enter visualization mode
+    setAllLEDs(purpleColor);   // paint LEDs purple
+    // strip.show();             // only if your setAllLEDs() doesn't call show()
+    server.sendHeader("Location", "/visualization/index.html");
+    server.send(302, "text/plain", "Redirecting...");
+  });
 
-// Serve the static visualization files from SPIFFS
-server.serveStatic("/visualization/", SPIFFS, "/");
+  // Serve the static visualization files from SPIFFS
+  server.serveStatic("/visualization/", SPIFFS, "/");
 
 
   // File management endpoints: file listing, upload, deletion, and download for both SD and SPIFFS.
   server.on("/files", []() {
-    setAllLEDs(orangeColor);      // ← (optional) set maintance color LED color  
+    setAllLEDs(orangeColor);  // ← (optional) set maintance color LED color
     handleFiles();
   });
   server.on("/deleteFile", HTTP_GET, []() {
-   blinkColor(redColor, 2, 250);
+    blinkColor(redColor, 2, 250);
     handleCombinedFileDelete();
   });
   server.on("/deleteFileSPIFFS", HTTP_GET, []() {
-       blinkColor(redColor, 2, 250);
+    blinkColor(redColor, 2, 250);
     handleSPIFFSFileDelete();
   });
   server.on("/deleteFileSD", HTTP_GET, []() {
-       blinkColor(redColor, 2, 250);
+    blinkColor(redColor, 2, 250);
     handleSDFileDelete();
   });
   server.on("/downloadFile", HTTP_GET, []() {
-       blinkColor(purpleColor, 2, 250);
+    blinkColor(purpleColor, 2, 250);
     handleCombinedFileDownload();
   });
-  server.on("/upload", HTTP_POST, []() {
-     blinkColor(greenColor, 2, 250);
+  server.on(
+    "/upload", HTTP_POST, []() {
+      blinkColor(greenColor, 2, 250);
       server.send(200, "text/plain", "SPIFFS Upload Successful");
     },
     handleFileUpload);
-  server.on("/uploadsd", HTTP_POST, []() {
+  server.on(
+    "/uploadsd", HTTP_POST, []() {
       blinkColor(greenColor, 2, 250);
       server.send(200, "text/plain", "SD Card Upload Successful");
     },
@@ -1654,6 +1743,11 @@ void loop() {
   // Update SD card space statistics
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
+  // Update SPIFF card space statistics
+  size_t spiffsTotal = SPIFFS.totalBytes() / 1024;
+  size_t spiffsUsed = SPIFFS.usedBytes() / 1024;
+
+
 
   // Read sensor values from BMP and MPU
   float bmpTemp = bmp.readTemperature();
@@ -1746,7 +1840,7 @@ void loop() {
     Serial.println("--------------------");
   }
 
-  // Log sensor data to SD card
+  // Log sensor data to SD card en SPIFF
   char dataString[512];
   String currentTimestamp = getTimeStampString();
   snprintf(dataString, sizeof(dataString),
@@ -1775,9 +1869,19 @@ void loop() {
            minAltitudeDrop,
            totalSpace,
            usedSpace,
+           spiffsTotal,
+           spiffsUsed,
            currentLatitude,
            currentLongitude);
+
+
+  checkSpiffsSpaceAndWarn();
+  // Only need this once:
   appendFile(SD_MMC, "/log.csv", dataString);
+  if ((parachuteStatus == "armed" || parachuteStatus == "released") && spiffsLoggingAllowed) {
+    appendFile(SPIFFS, "/log.csv", dataString);
+  }
+
 
   // Check trigger conditions if the system is armed to possibly deploy the parachute
   if (parachuteStatus == "armed") {
@@ -1791,6 +1895,10 @@ void loop() {
       parachuteRelease();
     }
   }
+
+
+
+
 
   // -----------------------
   // Send sensor data over WebSocket for real-time monitoring
@@ -1838,10 +1946,12 @@ void loop() {
       object["TriggerLogic"] = useAndLogic ? "AND" : "OR";
       object["TotalSpace"] = totalSpace;
       object["UsedSpace"] = usedSpace;
+      object["SPIFFSTotalSpace"] = spiffsTotal;
+      object["SPIFFSUsedSpace"] = spiffsUsed;
       object["Latitude"] = currentLatitude;
       object["Longitude"] = currentLongitude;
       object["SensorModeFlight"] = sensorModeFlight;
-       object["Axis Config"] = axisConfig;
+      object["Axis Config"] = axisConfig;
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
