@@ -5,80 +5,89 @@
  *  - Added comprehensive inline documentation to clarify code behavior.
  *  - Anonymized API key and location data (longitude and latitude).
  *  - Minor improvements to code readability and structure.
- *  - Corrected Axis
-
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                         LED Behavior Summary                          │
-  └─────────────────────────────────────────────────────────────────────────┘
-
-  • Color Wheel Indices (0–255 → RGB via strip.Wheel(index)):
-      0   → red
-     30   → orange
-     85   → green
-    125   → aqua
-    170   → blue
-    200   → purple
-
-  • Core LED Functions:
-      setAllLEDs(color)
-        – color: 24-bit RGB value
-
-      blinkColor(color, times, delayms)
-        – color: 24-bit RGB
-        – times: number of on/off cycles
-        – delayms: ms between each on/off
-
-      showLEDColorsSequentially(color, direction, rotations)
-        – color: 24-bit RGB
-        – direction: +1 = ascending index, –1 = descending
-        – rotations: full passes across all LEDs
-
-      showRainbowCycle(wait, direction, rotations)
-        – wait: ms between frames
-        – direction: +1 forward through hue wheel, –1 backward
-        – rotations: number of full rainbow cycles
-
-  • Main Sequences:
-      – Startup (unarmed):
-          setAllLEDs(blueColor);                // solid blue
-
-      – Wi-Fi status:
-          if connected: blinkColor(greenColor,5,250);  // 5 green blinks @250ms
-          else:        blinkColor(orangeColor,5,250); // 5 orange blinks @250ms
-
-      – Parachute Armed:
-          showLEDColorsSequentially(redColor,  1, 3); // seq. red forward, 3 rot.
-          setAllLEDs(redColor);                       // solid red
-
-      – Parachute Released:
-          blinkColor(greenColor,5,100);                // 5 green blinks @100ms
-          showLEDColorsSequentially(greenColor, -1, 2); // seq. green reverse, 2 rot.
-          setAllLEDs(greenColor);                      // solid green
-
-      – Calibrate Sensors:
-          showLEDColorsSequentially(orangeColor,  1, 1); // seq. orange forward, 1 rot.
-          showLEDColorsSequentially(orangeColor, -1, 1); // seq. orange reverse, 1 rot.
-
-      – Visualization Mode:
-          setAllLEDs(purpleColor);                 // solid purple
-
-  • File Management & Endpoint Indicators:
-      – File Manager (/files):
-          setAllLEDs(orangeColor);                 // solid orange
-
-      – Delete File:
-          blinkColor(redColor, 2, 250);            // 2 red blinks @250ms
-
-      – Download File:
-          blinkColor(purpleColor, 2, 250);         // 2 purple blinks @250ms
-
-      – Upload (SPIFFS or SD):
-          blinkColor(greenColor, 2, 250);          // 2 green blinks @250ms
-
-*/
-
-
-
+ *  - Corrected Axis mapping and user-selectable axis configuration.
+ *  - **Added saving log data to both SD card and SPIFFS (with auto-disable if SPIFFS is almost full).**
+ *  - Improved LED sequences to clearly indicate every state, including warnings.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────────┐
+ * │                         LED Behavior & System Status Summary                │
+ * └──────────────────────────────────────────────────────────────────────────────┘
+ *
+ *  • Color Wheel Indices (0–255 → RGB via strip.Wheel(index)):
+ *      0   → red
+ *     30   → orange
+ *     85   → green
+ *    125   → aqua
+ *    170   → blue
+ *    200   → purple
+ *
+ *  • Core LED Functions:
+ *      setAllLEDs(color)
+ *        – color: 24-bit RGB value
+ *
+ *      blinkColor(color, times, delayms)
+ *        – color: 24-bit RGB
+ *        – times: number of on/off cycles
+ *        – delayms: ms between each on/off
+ *
+ *      showLEDColorsSequentially(color, direction, rotations)
+ *        – color: 24-bit RGB
+ *        – direction: +1 = ascending index, –1 = descending
+ *        – rotations: full passes across all LEDs
+ *
+ *      showRainbowCycle(wait, direction, rotations)
+ *        – wait: ms between frames
+ *        – direction: +1 forward through hue wheel, –1 backward
+ *        – rotations: number of full rainbow cycles
+ *
+ *  • Main LED Sequences & System States:
+ *      – **Startup / Unarmed:**
+ *          setAllLEDs(blueColor);                // Solid blue = system powered, safe
+ *
+ *      – **Wi-Fi status:**
+ *          if connected: blinkColor(greenColor,5,250);  // 5 green blinks @250ms = WiFi OK
+ *          else:        blinkColor(orangeColor,5,250); // 5 orange blinks @250ms = WiFi failed/AP mode
+ *
+ *      – **Parachute Armed:**
+ *          showLEDColorsSequentially(redColor,  1, 3);  // Sequential red (forward), 3 rotations = arming
+ *          setAllLEDs(redColor);                        // Solid red = system ARMED, ready for flight
+ *
+ *      – **Parachute Released:**
+ *          blinkColor(greenColor,5,100);                // Fast green blink = release triggered
+ *          showLEDColorsSequentially(greenColor, -1, 2);// Sequential green (reverse), 2 rotations = confirmation
+ *          setAllLEDs(greenColor);                      // Solid green = parachute deployed/released
+ *
+ *      – **Calibrate Sensors:**
+ *          showLEDColorsSequentially(orangeColor,  1, 1); // Orange forward, 1 rot = begin calibration
+ *          showLEDColorsSequentially(orangeColor, -1, 1); // Orange reverse, 1 rot = finish calibration
+ *
+ *      – **Visualization Mode:**
+ *          setAllLEDs(purpleColor);                 // Solid purple = visualization/dashboard mode active
+ *
+ *  • File Management, Upload/Download, and Warning Indicators:
+ *      – **File Manager (/files endpoint):**
+ *          setAllLEDs(orangeColor);                 // Solid orange = file management in progress
+ *
+ *      – **Delete File:**
+ *          blinkColor(redColor, 2, 250);            // 2 slow red blinks = file deleted
+ *
+ *      – **Download File:**
+ *          blinkColor(purpleColor, 2, 250);         // 2 purple blinks = file downloaded
+ *
+ *      – **Upload File (SD or SPIFFS):**
+ *          blinkColor(greenColor, 2, 250);          // 2 green blinks = upload successful
+ *
+ *      – **SPIFFS Storage Almost Full:**
+ *          animateWarningPatternLEDs();             // Alternating red/purple LEDs and warning bar on web UI
+ *          Logging to SPIFFS is auto-disabled until free space restored.
+ *          When resolved: solid blue (unarmed) and logging resumes.
+ *
+ *  • Data Logging:
+ *      – All data is always logged to SD card if available.
+ *      – Data is also logged to SPIFFS **as long as there is enough free space**.
+ *      – If SPIFFS free space drops below threshold, logging is suspended and visual warning shown.
+ *
+ */
 
 // -----------------------
 // Library Inclusions
@@ -107,7 +116,7 @@ extern "C" {
 #include <HTTPClient.h>
 #include <Arduino_ESP32_OTA.h>
 #include <HTTPUpdateServer.h>
-#include <ESPmDNS.h>
+// #include <ESPmDNS.h>
 #include <EEPROM.h>
 #include <SPIFFS.h>
 #include <math.h>
@@ -129,7 +138,7 @@ Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNE
 // -----------------------
 #define EEPROM_SIZE 10          // EEPROM size
 #define EEPROM_PRESSURE_ADDR 0  // EEPROM address for storing pressure
-#define MIN_SPIFFS_FREE_PCT 15  // Define percentage free space SPIFF
+#define MIN_SPIFFS_FREE_PCT 10  // Define percentage free space SPIFF
 bool spiffsLoggingAllowed = false;
 bool alreadyWarned = false;
 bool apiSuccess = false;
@@ -163,9 +172,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "9732aa1f7a2374820e152ab549ec9349";  // Anonymized API key
-float currentLatitude = 52.03323004349591;                              // Anonymized Latitude
-float currentLongitude = 4.33483383178711;                              // Anonymized Longitude
+const char *openWeatherMapApiKey = "xxxxxxxxxxxx";  // Anonymized API key
+float currentLatitude = 52.13323004349591;                              // Anonymized Latitude
+float currentLongitude = 4.39483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -354,6 +363,10 @@ const char *webpage = R"rawliteral(
 <body>
   <h1>Flight Information</h1>
 
+<div id="spiffsWarningBox" style="display:none; color:white; background:red; text-align:center; padding:10px; font-weight:bold;">
+  <span>⚠️ SPIFFS WARNING: Internal storage almost full! Logging disabled. Download/delete files.</span>
+</div>
+
   <table class='data-table'>
     <tr><th>Parameter</th><th>Value</th></tr>
     <tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>
@@ -526,6 +539,13 @@ document.getElementById('SPIFFSUsedSpace').innerHTML = obj.SPIFFSUsedSpace || '-
 document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
 document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
 document.getElementById('axisConfigDisplay').innerText = obj['Axis Config'];
+
+  if (obj.SpiffsWarning) {
+    document.getElementById('spiffsWarningBox').style.display = '';
+  } else {
+    document.getElementById('spiffsWarningBox').style.display = 'none';
+  }
+
 
   }
   window.onload = init;
@@ -1228,8 +1248,8 @@ void checkSpiffsSpaceAndWarn() {
     spiffsLoggingAllowed = false;
   } else {
     if (alreadyWarned) {
-      setAllLEDs(blueColor);              // Restore blue (startup/unarmed color)
-      parachuteStatus = "unarmed";        // Set state to unarmed
+      setAllLEDs(blueColor);        // Restore blue (startup/unarmed color)
+      parachuteStatus = "unarmed";  // Set state to unarmed
       Serial.println("SPIFFS heeft weer voldoende ruimte, logging wordt hervat.");
       alreadyWarned = false;
     }
@@ -1297,9 +1317,12 @@ void parachuteArmed() {
   parachuteservo.write(0);
   parachuteStatus = "armed";
 
-  showLEDColorsSequentially(redColor, 1, 3);
-  setAllLEDs(redColor);
-  // strip.show();
+  if (alreadyWarned) {
+    setWarningPatternLEDs();  // Or animateWarningPatternLEDs();
+  } else {
+    showLEDColorsSequentially(redColor, 1, 3);
+    setAllLEDs(redColor);
+  }
 }
 
 // Calibrates sensors by capturing baseline altitude and accelerometer offsets.
@@ -1332,16 +1355,13 @@ void calibrateSensors() {
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
   // If we’re back to “armed”, show solid red LEDs:
-  if (parachuteStatus == "armed") {
-    setAllLEDs(redColor);
+  if (!alreadyWarned) {
+    if (parachuteStatus == "armed") setAllLEDs(redColor);
+    if (parachuteStatus == "unarmed") setAllLEDs(blueColor);
+    if (parachuteStatus == "released") setAllLEDs(greenColor);
+  } else {
+    setWarningPatternLEDs();
   }
-  if (parachuteStatus == "unarmed") {
-    setAllLEDs(blueColor);
-  }
-  if (parachuteStatus == "released") {
-    setAllLEDs(greenColor);
-  }
-
   // Reset sensor mode to Flight mode after calibration
   sensorModeFlight = true;
   Serial.print("Reset sensor mode to Flight");
@@ -1594,11 +1614,11 @@ void setup() {
   // Setup OTA update mechanism and mDNS services
   // -----------------------
   httpUpdater.setup(&server);
-  if (MDNS.begin("esp32-webupdate")) {
-    Serial.println("MDNS responder started");
-  }
-  MDNS.addService("http", "tcp", 80);
-  Serial.printf("HTTPUpdateServer ready! Open http://esp32-webupdate.local/update in your browser\n");
+  // if (MDNS.begin("esp32-webupdate")) {
+  //  Serial.println("MDNS responder started");
+  // }
+  // MDNS.addService("http", "tcp", 80);
+  // Serial.printf("HTTPUpdateServer ready! Open http://esp32-webupdate.local/update in your browser\n");
 
   // Allocate timers for PWM (required by the servo library)
   ESP32PWM::allocateTimer(0);
@@ -1896,10 +1916,6 @@ void loop() {
     }
   }
 
-
-
-
-
   // -----------------------
   // Send sensor data over WebSocket for real-time monitoring
   // -----------------------
@@ -1952,6 +1968,7 @@ void loop() {
       object["Longitude"] = currentLongitude;
       object["SensorModeFlight"] = sensorModeFlight;
       object["Axis Config"] = axisConfig;
+      object["SpiffsWarning"] = alreadyWarned;
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
