@@ -1,5 +1,5 @@
 /*
- * Flight Computer Firmware for ESP32 - Integrated, Corrected & Enhanced Version (V3.3.0)
+ * Flight Computer Firmware for ESP32 - Integrated, Corrected & Enhanced Version (V3.5.0)
  *
  * Changes from previous versions:
  *  - Added comprehensive inline documentation to clarify code behavior.
@@ -122,31 +122,33 @@ extern "C" {
 #include <math.h>
 #include <vector>
 
+
 // -----------------------
 // LED Circle Setup (Freenove_WS2812)
 // -----------------------
-#include "Freenove_WS2812_Lib_for_ESP32.h"
-#define LEDS_COUNT 12  // Number of LEDs in the strip
+// #include "Freenove_WS2812_Lib_for_ESP32.h"
+#include <Adafruit_NeoPixel.h>
+#define LEDS_COUNT 42  // Number of LEDs in the strip
 #define LEDS_PIN 17    // GPIO pin for the LED strip data line
 #define CHANNEL 0      // PWM channel (if applicable)
-Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
-
-
+//Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
+Adafruit_NeoPixel strip(LEDS_COUNT, LEDS_PIN, NEO_GRB + NEO_KHZ800);
 
 // -----------------------
 // Macro Definitions & Global Variables
 // -----------------------
-#define EEPROM_SIZE 10          // EEPROM size
-#define EEPROM_PRESSURE_ADDR 0  // EEPROM address for storing pressure
-#define MIN_SPIFFS_FREE_PCT 10  // Define percentage free space SPIFF
+#define EEPROM_SIZE 10                  // EEPROM size
+#define EEPROM_PRESSURE_ADDR 0          // EEPROM address for storing pressure
+const size_t MAX_SPIFFS_USED_KB = 800;  // Set your preferred limit (in KB)
 bool spiffsLoggingAllowed = false;
 bool alreadyWarned = false;
 bool apiSuccess = false;
-bool debugSerial = false;      // Enable/disable serial debug printing
-bool sensorModeFlight = true;  // true: Flight sensor mode; false: Visualization mode
-float spiffsFreePct = 100.0;
+bool debugSerial = false;         // Enable/disable serial debug printing
+bool sensorModeFlight = true;     // true: Flight sensor mode; false: Visualization mode
+int axisConfig = 3;               // 0 = default mapping, 1 = alternative mapping (or more states as needed)
+bool sensorsCalibrated = false;   // true when calibrated
+bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
 
-int axisConfig = 3;  // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 
 // SD card storage info
 uint64_t totalSpace;
@@ -172,9 +174,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "xxxxxxxxxxxx";  // Anonymized API key
-float currentLatitude = 52.13323004349591;                              // Anonymized Latitude
-float currentLongitude = 4.39483383178711;                              // Anonymized Longitude
+const char *openWeatherMapApiKey = "xxxxxxxxxx";  // Anonymized API key
+float currentLatitude = 52.42523004349591;                              // Anonymized Latitude
+float currentLongitude = 4.5483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -364,8 +366,13 @@ const char *webpage = R"rawliteral(
   <h1>Flight Information</h1>
 
 <div id="spiffsWarningBox" style="display:none; color:white; background:red; text-align:center; padding:10px; font-weight:bold;">
-  <span>⚠️ SPIFFS WARNING: Internal storage almost full! Logging disabled. Download/delete files.</span>
+  <span>SPIFFS WARNING: Internal storage almost full! Logging disabled. Download/delete files.</span>
 </div>
+<div id="calibWarningBox" style="display:none; color:white; background:orange; text-align:center; padding:10px; font-weight:bold;">
+  <span>SENSOR CALIBRATION REQUIRED: Sensors are not yet calibrated. Please calibrate before arming!</span>
+</div>
+
+
 
   <table class='data-table'>
     <tr><th>Parameter</th><th>Value</th></tr>
@@ -393,6 +400,7 @@ const char *webpage = R"rawliteral(
     <tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>
     <tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>
     <tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>
+    <tr><td>Sensors Calibrated</td><td id="SensorsCalibrated">-</td></tr>
     <tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>
     <tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>
     <tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>
@@ -409,6 +417,7 @@ const char *webpage = R"rawliteral(
     <button id='BTN_ARM' onclick="button_arm()">Arm Parachute</button>
     <button id='BTN_RELEASE' onclick="button_release()">Release Parachute</button>
     <button id='BTN_CALIBRATE' onclick="button_calibrate()">Calibrate Sensors</button>
+    <button id='BTN_UNARM' onclick="button_unarm()">Unarm Parachute</button>
   </div>
 
 <!-- Latitude/Longitude inputs -->
@@ -476,7 +485,7 @@ const char *webpage = R"rawliteral(
   function button_arm(){ Socket.send(JSON.stringify({ parachute: 'Armed' })); }
   function button_release(){ Socket.send(JSON.stringify({ parachute: 'Released' })); }
   function button_calibrate(){ Socket.send(JSON.stringify({ calibrateSensors: true })); }
-
+function button_unarm() { Socket.send(JSON.stringify({ parachute: 'Unarmed' }));}
   function button_update_location(){
     var lat = parseFloat(document.getElementById('latitude').value);
     var lon = parseFloat(document.getElementById('longitude').value);
@@ -534,11 +543,11 @@ const char *webpage = R"rawliteral(
     document.getElementById('UsedSpace').innerHTML = obj.UsedSpace||'-';
     document.getElementById('SPIFFSTotalSpace').innerHTML = obj.SPIFFSTotalSpace || '-';
 document.getElementById('SPIFFSUsedSpace').innerHTML = obj.SPIFFSUsedSpace || '-';
-
     document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
 document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
 document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
 document.getElementById('axisConfigDisplay').innerText = obj['Axis Config'];
+document.getElementById('SensorsCalibrated').innerHTML = (obj.SensorsCalibrated === true) ? "Yes" : (obj.SensorsCalibrated === false) ? "No" : "-";
 
   if (obj.SpiffsWarning) {
     document.getElementById('spiffsWarningBox').style.display = '';
@@ -546,6 +555,12 @@ document.getElementById('axisConfigDisplay').innerText = obj['Axis Config'];
     document.getElementById('spiffsWarningBox').style.display = 'none';
   }
 
+// NEW: Calibration warning logic
+if (obj.SensorsCalibWarning) {
+  document.getElementById('calibWarningBox').style.display = '';
+} else {
+  document.getElementById('calibWarningBox').style.display = 'none';
+}
 
   }
   window.onload = init;
@@ -754,9 +769,9 @@ void handleFiles() {
   File spFile = rootSPIFFS.openNextFile();
   while (spFile) {
     String spFilename = spFile.name();
-    float fileSizeMB = spFile.size() / (1024.0 * 1024.0);
+    size_t fileSizeKB = spFile.size() / 1024;
     String lastUpdated = "N/A";  // SPIFFS does not store modification timestamps.
-    html += "<li>" + spFilename + " - " + String(fileSizeMB, 2) + " MB, Last Updated: " + lastUpdated;
+    html += "<li>" + spFilename + " - " + String(fileSizeKB) + " KB, Last Updated: " + lastUpdated;
     html += " <button onclick=\"deleteFile('" + spFilename + "', 'SPIFFS')\">Delete</button>";
     html += " <button onclick=\"window.open('/downloadFile?name=" + spFilename + "','_blank')\">Download</button></li>";
     spFile = rootSPIFFS.openNextFile();
@@ -1016,24 +1031,41 @@ void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY,
   }
 }
 
+// NeoPixel color wheel helper, same as Adafruit's demo
+uint32_t Wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
+
 // -----------------------
 // LED Helper Functions
 // -----------------------
 
 // Initializes global LED color variables using a color wheel function
 void initLEDColors() {
-  redColor = strip.Wheel(0);
-  blueColor = strip.Wheel(170);
-  purpleColor = strip.Wheel(200);
-  greenColor = strip.Wheel(85);
-  aquaColor = strip.Wheel(125);
-  orangeColor = strip.Wheel(30);
+  redColor = Wheel(0);
+  blueColor = Wheel(170);
+  purpleColor = Wheel(200);
+  greenColor = Wheel(85);
+  aquaColor = Wheel(125);
+  orangeColor = Wheel(30);
 }
 
 // Set all LEDs to a specific color
 void setAllLEDs(uint32_t color) {
   for (int i = 0; i < LEDS_COUNT; i++) {
-    strip.setLedColorData(i, color);
+   // strip.setLedColorData(i, color);
+    strip.setPixelColor(i, color);
+
   }
   strip.show();
 }
@@ -1045,8 +1077,10 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
       // 1) Set *all* LED colors in RAM first:
       for (uint16_t i = 0; i < LEDS_COUNT; i++) {
         uint8_t wheelIndex = (((i * 256 / LEDS_COUNT) + (direction * j) + 256) % 256);
-        uint32_t color = strip.Wheel(wheelIndex);
-        strip.setLedColorData(i, color);
+        uint32_t color = Wheel(wheelIndex);
+       //strip.setLedColorData(i, color);
+       strip.setPixelColor(i, color);
+
       }
       // 2) Now *one* show() for the whole frame:
       strip.show();
@@ -1054,7 +1088,7 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
       delay(wait);
     }
     setAllLEDs(0);
-    delay(500);
+    delay(100);
   }
 }
 
@@ -1064,19 +1098,23 @@ void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t ro
   for (uint16_t r = 0; r < rotations; r++) {
     if (direction >= 0) {
       for (int i = 0; i < LEDS_COUNT; i++) {
-        strip.setLedColorData(i, color);
+       // strip.setLedColorData(i, color);
+        strip.setPixelColor(i, color);
+
         strip.show();
-        delay(100);
+        delay(40);
       }
     } else {
       for (int i = LEDS_COUNT - 1; i >= 0; i--) {
-        strip.setLedColorData(i, color);
+      //  strip.setLedColorData(i, color);
+      strip.setPixelColor(i, color);
+
         strip.show();
-        delay(100);
+        delay(40);
       }
     }
     setAllLEDs(0);
-    delay(500);
+    delay(100);
   }
 }
 
@@ -1096,9 +1134,9 @@ void blinkColor(uint32_t color, int times, int delayms) {
 void setWarningPatternLEDs() {
   for (int i = 0; i < LEDS_COUNT; i++) {
     if (i % 2 == 0) {
-      strip.setLedColorData(i, redColor);
+      strip.setPixelColor(i, redColor);
     } else {
-      strip.setLedColorData(i, purpleColor);
+      strip.setPixelColor(i, purpleColor);
     }
   }
   strip.show();
@@ -1111,17 +1149,17 @@ void animateWarningPatternLEDs() {
   for (int i = 0; i < LEDS_COUNT; i++) {
     for (int j = 0; j <= i; j++) {
       if (j % 2 == 0) {
-        strip.setLedColorData(j, redColor);
+        strip.setPixelColor(j, redColor);
       } else {
-        strip.setLedColorData(j, purpleColor);
+        strip.setPixelColor(j, purpleColor);
       }
     }
     // Set all the rest to off
     for (int j = i + 1; j < LEDS_COUNT; j++) {
-      strip.setLedColorData(j, 0);
+      strip.setPixelColor(j, 0);
     }
     strip.show();
-    delay(80);  // Adjust delay for desired speed
+    delay(30);  // Adjust delay for desired speed
   }
   // Leave all LEDs in pattern
   setWarningPatternLEDs();
@@ -1235,21 +1273,19 @@ void updatePressureFromAPI() {
 // Check SPIFF Space and warn
 // ---------------------------------------------------------------------------
 void checkSpiffsSpaceAndWarn() {
-  size_t spiffsTotal = SPIFFS.totalBytes();
-  size_t spiffsUsed = SPIFFS.usedBytes();
-  spiffsFreePct = 100.0 * (float)(spiffsTotal - spiffsUsed) / (float)spiffsTotal;
+  size_t spiffsUsedKB = SPIFFS.usedBytes() / 1024;
 
-  if (spiffsFreePct < MIN_SPIFFS_FREE_PCT) {
+  if (spiffsUsedKB >= MAX_SPIFFS_USED_KB) {
     if (!alreadyWarned) {
       animateWarningPatternLEDs();
-      Serial.println("SPIFFS bijna vol! Logging naar SPIFFS wordt uitgeschakeld.");
+      Serial.printf("SPIFFS used: %u KB (limit: %u KB). Logging naar SPIFFS wordt uitgeschakeld.\n", (unsigned)spiffsUsedKB, (unsigned)MAX_SPIFFS_USED_KB);
       alreadyWarned = true;
     }
     spiffsLoggingAllowed = false;
   } else {
     if (alreadyWarned) {
-      setAllLEDs(blueColor);        // Restore blue (startup/unarmed color)
-      parachuteStatus = "unarmed";  // Set state to unarmed
+      setAllLEDs(blueColor);
+      parachuteStatus = "unarmed";
       Serial.println("SPIFFS heeft weer voldoende ruimte, logging wordt hervat.");
       alreadyWarned = false;
     }
@@ -1289,6 +1325,14 @@ void parachuteRelease() {
 
 // Arms the parachute system, captures baseline altitude, and initializes sensor calibration.
 void parachuteArmed() {
+
+  if (!sensorsCalibrated) {
+    // Flash orange LEDs as a warning
+    blinkColor(orangeColor, 15, 100);  // 15 times, 80 ms on/off (adjust as needed)
+    Serial.println("Cannot arm: Sensors are not calibrated!");
+    return;  // Don't arm the parachute
+  }
+
   Serial.println("Arming parachute...");
 
   char eventLog[128];
@@ -1350,7 +1394,8 @@ void calibrateSensors() {
   Serial.println(baselineAltitude);
   showLEDColorsSequentially(orangeColor, 1, 1);   // seq. orange, forward, 1 rot.
   showLEDColorsSequentially(orangeColor, -1, 1);  // seq. orange, reverse, 1 rot.
-                                                  //  strip.show();
+
+
 
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
@@ -1363,6 +1408,7 @@ void calibrateSensors() {
     setWarningPatternLEDs();
   }
   // Reset sensor mode to Flight mode after calibration
+  sensorsCalibrated = true;
   sensorModeFlight = true;
   Serial.print("Reset sensor mode to Flight");
   Serial.println(sensorModeFlight);
@@ -1434,7 +1480,11 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
           } else if (String(command) == "Released") {
             parachuteRelease();
             Serial.println("Parachute release command processed.");
+          } else if (String(command) == "Unarmed") {
+            parachuteUnarmed();
+            Serial.println("Parachute unarmed command processed.");
           }
+
           // NEW: handle location updates
           if (doc.containsKey("latitude") && doc.containsKey("longitude")) {
             currentLatitude = doc["latitude"];
@@ -1460,6 +1510,20 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
   }
 }
 
+
+void parachuteUnarmed() {
+  parachuteStatus = "unarmed";
+  baselineCaptured = false;  // Optional: Clear baseline so it's recalculated next time
+  if (!alreadyWarned) {
+    setAllLEDs(blueColor);  // Blue = unarmed/safe
+  } else {
+    setWarningPatternLEDs();  // If SPIFFS warning active, keep warning pattern
+  }
+  Serial.println("Parachute is now UNARMED. Logging to SPIFFS will stop unless armed.");
+}
+
+
+
 // -----------------------
 // Setup Function: Initializes hardware, network, sensors, web server, and endpoints
 // -----------------------
@@ -1477,6 +1541,8 @@ void setup() {
   // Disable WiFi power saving mode
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
+
+
 
   // Connect to WiFi as a station
   WiFi.mode(WIFI_STA);
@@ -1969,6 +2035,8 @@ void loop() {
       object["SensorModeFlight"] = sensorModeFlight;
       object["Axis Config"] = axisConfig;
       object["SpiffsWarning"] = alreadyWarned;
+      object["SensorsCalibrated"] = sensorsCalibrated;
+      object["SensorsCalibWarning"] = !sensorsCalibrated;  // true if warning should show
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
