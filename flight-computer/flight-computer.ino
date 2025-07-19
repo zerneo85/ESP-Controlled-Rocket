@@ -177,6 +177,7 @@ const char *apPassword = "Rocket2022!";
 const char *openWeatherMapApiKey = "xxxxxxxxxx";  // Anonymized API key
 float currentLatitude = 52.42523004349591;                              // Anonymized Latitude
 float currentLongitude = 4.5483383178711;                              // Anonymized Longitude
+
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -275,175 +276,222 @@ const char *webpage = R"rawliteral(
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <title>Flight Computer</title>
   <style>
-  /* Base page styling */
-  body {
-    background-color: #EEEEEE;
-    font-family: Arial, sans-serif;
-    color: #003366;
-    margin: 0;
-    padding: 20px;
-  }
-  h1 {
-    text-align: center;
-    margin-bottom: 20px;
-  }
+    body {
+      background-color: #EEEEEE;
+      font-family: Arial, sans-serif;
+      color: #003366;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      text-align: center;
+      margin-top: 24px;
+      margin-bottom: 10px;
+      font-size: 2.2rem;
+      padding: 0 0 4px 0;
+    }
+    .data-columns {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      flex-wrap: wrap;
+      max-width: 1200px;
+      margin: 0 auto 0 auto;
+    }
+    .data-table {
+      flex: 1 1 0;
+      min-width: 280px;
+      max-width: 340px;
+      background-color: #FFF;
+      box-shadow: 0 0 10px rgba(0,0,0,0.08);
+      border-collapse: collapse;
+      margin: 0 0 30px 0;
+    }
+    .data-table th,
+    .data-table td {
+      padding: 10px 14px;
+      border: 1px solid #CCC;
+      text-align: left;
+    }
+    .data-table th {
+      background-color: #003366;
+      color: #FFF;
+      text-align: left;
+      font-size: 1rem;
+    }
+    .data-table tr:nth-child(even) {
+      background-color: #F9F9F9;
+    }
+    .data-table-caption {
+      background: #e4eaf2;
+      font-weight: bold;
+      text-align: center;
+      font-size: 1.1rem;
+      padding: 5px 0;
+      border-radius: 5px 5px 0 0;
+      letter-spacing: 1px;
+    }
+    /* Warning boxes */
+    #spiffsWarningBox, #calibWarningBox {
+      width: 100%;
+      max-width: 900px;
+      margin: 18px auto 14px auto;
+      color: #fff;
+      font-weight: bold;
+      text-align: center;
+      padding: 11px 0;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+    #spiffsWarningBox { background: #e53935; }
+    #calibWarningBox { background: #FFA500; }
 
-  /* Data table */
-  .data-table {
-    margin: 0 auto;
-    border-collapse: collapse;
-    width: 90%;
-    max-width: 600px;
-    background-color: #FFF;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-  }
-  .data-table th,
-  .data-table td {
-    padding: 12px 15px;
-    border: 1px solid #CCC;
-    text-align: left;
-  }
-  .data-table th {
-    background-color: #003366;
-    color: #FFF;
-  }
-  .data-table tr:nth-child(even) {
-    background-color: #F9F9F9;
-  }
+    /* Button bar */
+    .button-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin: 0 auto 18px auto;
+      max-width: 900px;
+    }
+    button {
+      background-color: #003366;
+      color: #FFF;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 18px;
+      font-size: 1rem;
+      margin-bottom: 0;
+      cursor: pointer;
+      transition: background 0.15s;
+      min-width: 110px;
+    }
+    button:hover {
+      background-color: #0055AA;
+    }
 
-  /* Buttons */
-  .button-container {
-    text-align: center;
-    margin-top: 20px;
-  }
-  button {
-    background-color: #003366;
-    color: #FFF;
-    border: none;
-    padding: 10px 20px;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  button:hover {
-    background-color: #0055AA;
-  }
-
-  /* Generic input/select fallback */
-  input[type='number'],
-  select {
-    padding: 8px;
-    font-size: 16px;
-    width: 75px;      /* applies to all number inputs & selects by default */
-    margin-right: 10px;
-    margin-top: 5px;
-  }
-
-  /* Lat/Lon inputs: ~10 characters wide */
-  #latitude,
-  #longitude {
-    width: 18ch;
-    min-width: 18ch;
-    max-width: 100%;
-  }
-
-  /* Set width of Altitude Drop, Acc X/Y/Z, Trigger Logic inputs to ~3 characters */
-  #newAltThreshold, #newAccX, #newAccY, #newAccZ, #triggerLogic {
-    width: 10ch;
-    min-width: 8ch;
-    max-width: 100%;
-    text-align: left;
-  }
-
-  /* Axis Mapping dropdown: ~30 characters wide */
-  #axisConfig {
-    width: 30ch;
-    max-width: 100%;
-  }
-</style>
-
+    /* Input styling */
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px 16px;
+      margin: 0 auto 12px auto;
+      max-width: 900px;
+    }
+    .controls-row label {
+      margin-right: 2px;
+      font-size: 1rem;
+    }
+    .controls-row input[type='number'],
+    .controls-row select {
+      padding: 8px;
+      font-size: 1rem;
+      border-radius: 4px;
+      border: 1px solid #bbb;
+      width: 105px;
+      min-width: 65px;
+      margin-right: 4px;
+      margin-bottom: 2px;
+    }
+    /* For mobile: vertical stack */
+    @media (max-width: 1050px) {
+      .data-columns { gap: 16px; }
+    }
+    @media (max-width: 900px) {
+      .data-columns { flex-direction: column; align-items: center; gap: 0; }
+      .data-table { margin-bottom: 24px; }
+    }
+    @media (max-width: 640px) {
+      h1 { font-size: 1.4rem; margin-top: 18px; margin-bottom: 7px;}
+      .data-table { min-width: 98vw; max-width: 98vw; font-size: 0.99em;}
+      .button-bar, .controls-row { max-width: 99vw; }
+      .controls-row input[type='number'] { width: 75px; }
+      .controls-row select { width: 105px; }
+    }
+  </style>
 </head>
 <body>
-  <h1>Flight Information</h1>
+  <h1>Flight Computer</h1>
 
-<div id="spiffsWarningBox" style="display:none; color:white; background:red; text-align:center; padding:10px; font-weight:bold;">
-  <span>SPIFFS WARNING: Internal storage almost full! Logging disabled. Download/delete files.</span>
-</div>
-<div id="calibWarningBox" style="display:none; color:white; background:orange; text-align:center; padding:10px; font-weight:bold;">
-  <span>SENSOR CALIBRATION REQUIRED: Sensors are not yet calibrated. Please calibrate before arming!</span>
-</div>
+  <div id="spiffsWarningBox" style="display:none;">
+    <span>SPIFFS WARNING: Internal storage almost full! Logging disabled. Download/delete files.</span>
+  </div>
+  <div id="calibWarningBox" style="display:none;">
+    <span>SENSOR CALIBRATION REQUIRED: Sensors are not yet calibrated. Please calibrate before arming!</span>
+  </div>
 
+  <!-- Three equally wide, centered columns -->
+  <div class="data-columns">
+    <table class="data-table">
+      <caption class="data-table-caption">Flight / Altitude</caption>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>
+      <tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr>
+      <tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr>
+      <tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr>
+      <tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr>
+      <tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr>
+      <tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr>
+      <tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr>
+      <tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr>
+      <tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr>
+      <tr><td>Latitude</td><td id="currentLatitude">-</td></tr>
+      <tr><td>Longitude</td><td id="currentLongitude">-</td></tr>
+      <tr><td>Axis Mapping Config</td><td id="axisConfigDisplay">-</td></tr>
+    </table>
+    <table class="data-table">
+      <caption class="data-table-caption">Sensor Data</caption>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr>
+      <tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr>
+      <tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr>
+      <tr><td>Acc X</td><td id='AccX'>-</td></tr>
+      <tr><td>Acc Y</td><td id='AccY'>-</td></tr>
+      <tr><td>Acc Z</td><td id='AccZ'>-</td></tr>
+      <tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr>
+      <tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr>
+      <tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr>
+      <tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr>
+    </table>
+    <table class="data-table">
+      <caption class="data-table-caption">System / Status</caption>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr>
+      <tr><td>Sensors Calibrated</td><td id="SensorsCalibrated">-</td></tr>
+      <tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>
+      <tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>
+      <tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>
+      <tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>
+      <tr><td>Sensor Mode Flight</td><td id='SensorModeFlight'>-</td></tr>
+      <tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>
+      <tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>
+      <tr><td>SPIFFS Total Space (KB)</td><td id='SPIFFSTotalSpace'>-</td></tr>
+      <tr><td>SPIFFS Used Space (KB)</td><td id='SPIFFSUsedSpace'>-</td></tr>
+    </table>
+  </div>
 
-
-  <table class='data-table'>
-    <tr><th>Parameter</th><th>Value</th></tr>
-    <tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>
-    <tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr>
-    <tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr>
-    <tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr>
-    <tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr>
-    <tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr>
-    <tr><td>Acc X</td><td id='AccX'>-</td></tr>
-    <tr><td>Acc Y</td><td id='AccY'>-</td></tr>
-    <tr><td>Acc Z</td><td id='AccZ'>-</td></tr>
-    <tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr>
-    <tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr>
-    <tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr>
-    <tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr>
-    <tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr>
-    <tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr>
-    <tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr>
-    <tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr>
-    <tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr>
-    <tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr>
-    <tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr>
-    <tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr>
-    <tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>
-    <tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>
-    <tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>
-    <tr><td>Sensors Calibrated</td><td id="SensorsCalibrated">-</td></tr>
-    <tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>
-    <tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>
-    <tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>
-    <tr><td>SPIFFS Total Space (KB)</td><td id='SPIFFSTotalSpace'>-</td></tr>
-<tr><td>SPIFFS Used Space (KB)</td><td id='SPIFFSUsedSpace'>-</td></tr>
-    <tr><td>Sensor Mode Flight</td><td id='SensorModeFlight'>-</td></tr>
-    <tr><td>Latitude</td><td id="currentLatitude">-</td></tr>
-<tr><td>Longitude</td><td id="currentLongitude">-</td></tr>
-<tr><td>Axis Mapping Configuration</td><td id="axisConfigDisplay">-</td></tr>
-
-  </table>
-
-  <div class='button-container'>
+  <!-- Button bar - all main actions in a single row -->
+  <div class="button-bar">
     <button id='BTN_ARM' onclick="button_arm()">Arm Parachute</button>
     <button id='BTN_RELEASE' onclick="button_release()">Release Parachute</button>
     <button id='BTN_CALIBRATE' onclick="button_calibrate()">Calibrate Sensors</button>
     <button id='BTN_UNARM' onclick="button_unarm()">Unarm Parachute</button>
+    <button id='BTN_OTA' onclick="window.open('/update','_blank')">OTA Upgrade</button>
+    <button id='BTN_FILES' onclick="window.open('/files','_blank')">Files</button>
+    <button id='BTN_VIS' onclick="window.open('/visualization','_blank')">Visualization</button>
   </div>
 
-<!-- Latitude/Longitude inputs -->
-<div class="button-container">
-  <label for="latitude">Latitude:</label>
-  <input
-    type="number"
-    id="latitude"
-    step="0.000001"
-    value="52.03323004349591"
-    placeholder="Latitude"
-    size="15"
-  >
-  <label for="longitude">Longitude:</label>
-  <input
-    type="number"
-    id="longitude"
-    step="0.000001"
-    value="4.36483383178711"
-    placeholder="Longitude"
-    size="15"
-  >
-  <button id="BTN_SET_LOCATION" onclick="button_update_location()">Set Location</button>
-</div>
-    
-  <div class='button-container'>
+  <!-- Controls below -->
+  <div class="controls-row">
+    <label for="latitude">Latitude:</label>
+    <input type="number" id="latitude" step="0.000001" value="52.03323004349591" placeholder="Latitude">
+    <label for="longitude">Longitude:</label>
+    <input type="number" id="longitude" step="0.000001" value="4.36483383178711" placeholder="Longitude">
+    <button id="BTN_SET_LOCATION" onclick="button_update_location()">Set Location</button>
+  </div>
+  <div class="controls-row">
     <label for='newAltThreshold'>Altitude Drop:</label>
     <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
     <label for='newAccX'>Acc X:</label>
@@ -456,8 +504,7 @@ const char *webpage = R"rawliteral(
     <select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select>
     <button id='BTN_UPDATE_TRIGGERS' onclick="button_update_triggers()">Update Triggers Thresholds</button>
   </div>
-
-  <div class='button-container'>
+  <div class="controls-row">
     <label for='axisConfig'>Axis Mapping Configuration:</label>
     <select id='axisConfig'>
       <option value='0'>0 - Swap x>X and y>Z and z>Y</option>
@@ -470,103 +517,99 @@ const char *webpage = R"rawliteral(
     <button onclick="button_update_axis()">Update Axis Mapping</button>
   </div>
 
-  <div class='button-container'>
-    <button id='BTN_OTA' onclick="window.open('/update','_blank')">OTA Upgrade</button>
-    <button id='BTN_FILES' onclick="window.open('/files','_blank')">Files</button>
-    <button id='BTN_VIS' onclick="window.open('/visualization','_blank')">Visualization</button>
-  </div>
 
-<script>
-  var Socket;
-  function init(){
-    Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
-    Socket.onmessage = function(event){ processCommand(event); };
-  }
-  function button_arm(){ Socket.send(JSON.stringify({ parachute: 'Armed' })); }
-  function button_release(){ Socket.send(JSON.stringify({ parachute: 'Released' })); }
-  function button_calibrate(){ Socket.send(JSON.stringify({ calibrateSensors: true })); }
-function button_unarm() { Socket.send(JSON.stringify({ parachute: 'Unarmed' }));}
-  function button_update_location(){
-    var lat = parseFloat(document.getElementById('latitude').value);
-    var lon = parseFloat(document.getElementById('longitude').value);
-    Socket.send(JSON.stringify({ latitude: lat, longitude: lon }));
-  }
-
-  function button_update_triggers(){
-    var altVal = parseFloat(document.getElementById('newAltThreshold').value);
-    var accXVal = parseFloat(document.getElementById('newAccX').value);
-    var accYVal = parseFloat(document.getElementById('newAccY').value);
-    var accZVal = parseFloat(document.getElementById('newAccZ').value);
-    var logicVal = document.getElementById('triggerLogic').value;
-    Socket.send(JSON.stringify({
-      newThreshold: altVal,
-      newAccX: accXVal,
-      newAccY: accYVal,
-      newAccZ: accZVal,
-      newTriggerLogic: logicVal
-    }));
-  }
-
-  function button_update_axis(){
-    var v = parseInt(document.getElementById('axisConfig').value);
-    Socket.send(JSON.stringify({ axisConfig: v }));
-  }
-
-  function processCommand(event){
-    var obj = JSON.parse(event.data);
-    document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude||'-';
-    document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude||'-';
-    document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop||'-';
-    document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp||'-';
-    document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure||'-';
-    document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp||'-';
-    document.getElementById('AccX').innerHTML = obj.AccX||'-';
-    document.getElementById('AccY').innerHTML = obj.AccY||'-';
-    document.getElementById('AccZ').innerHTML = obj.AccZ||'-';
-    document.getElementById('Gyroscope').innerHTML = obj.Gyroscope||'-';
-    document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus||'-';
-    document.getElementById('LocalPressure').innerHTML = obj.LocalPressure||'-';
-    document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure||'-';
-    document.getElementById('PressureSource').innerHTML = obj.PressureSource||'-';
-    document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude||'-';
-    document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude||'-';
-    document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude||'-';
-    document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude||'-';
-    document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop||'-';
-    document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop||'-';
-    document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold||'-';
-    document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold||'-';
-    document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold||'-';
-    document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold||'-';
-    document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic||'-';
-    document.getElementById('TotalSpace').innerHTML = obj.TotalSpace||'-';
-    document.getElementById('UsedSpace').innerHTML = obj.UsedSpace||'-';
-    document.getElementById('SPIFFSTotalSpace').innerHTML = obj.SPIFFSTotalSpace || '-';
-document.getElementById('SPIFFSUsedSpace').innerHTML = obj.SPIFFSUsedSpace || '-';
-    document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
-document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
-document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
-document.getElementById('axisConfigDisplay').innerText = obj['Axis Config'];
-document.getElementById('SensorsCalibrated').innerHTML = (obj.SensorsCalibrated === true) ? "Yes" : (obj.SensorsCalibrated === false) ? "No" : "-";
-
-  if (obj.SpiffsWarning) {
-    document.getElementById('spiffsWarningBox').style.display = '';
-  } else {
-    document.getElementById('spiffsWarningBox').style.display = 'none';
-  }
-
-// NEW: Calibration warning logic
-if (obj.SensorsCalibWarning) {
-  document.getElementById('calibWarningBox').style.display = '';
-} else {
-  document.getElementById('calibWarningBox').style.display = 'none';
-}
-
-  }
-  window.onload = init;
-</script>
 </body>
 </html>
+
+
+  <script>
+    var Socket;
+    function init(){
+      Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+      Socket.onmessage = function(event){ processCommand(event); };
+    }
+    function button_arm(){ Socket.send(JSON.stringify({ parachute: 'Armed' })); }
+    function button_release(){ Socket.send(JSON.stringify({ parachute: 'Released' })); }
+    function button_calibrate(){ Socket.send(JSON.stringify({ calibrateSensors: true })); }
+    function button_unarm() { Socket.send(JSON.stringify({ parachute: 'Unarmed' }));}
+    function button_update_location(){
+      var lat = parseFloat(document.getElementById('latitude').value);
+      var lon = parseFloat(document.getElementById('longitude').value);
+      Socket.send(JSON.stringify({ latitude: lat, longitude: lon }));
+    }
+    function button_update_triggers(){
+      var altVal = parseFloat(document.getElementById('newAltThreshold').value);
+      var accXVal = parseFloat(document.getElementById('newAccX').value);
+      var accYVal = parseFloat(document.getElementById('newAccY').value);
+      var accZVal = parseFloat(document.getElementById('newAccZ').value);
+      var logicVal = document.getElementById('triggerLogic').value;
+      Socket.send(JSON.stringify({
+        newThreshold: altVal,
+        newAccX: accXVal,
+        newAccY: accYVal,
+        newAccZ: accZVal,
+        newTriggerLogic: logicVal
+      }));
+    }
+    function button_update_axis(){
+      var v = parseInt(document.getElementById('axisConfig').value);
+      Socket.send(JSON.stringify({ axisConfig: v }));
+    }
+    function processCommand(event){
+      var obj = JSON.parse(event.data);
+      document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude||'-';
+      document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude||'-';
+      document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop||'-';
+      document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp||'-';
+      document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure||'-';
+      document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp||'-';
+      document.getElementById('AccX').innerHTML = obj.AccX||'-';
+      document.getElementById('AccY').innerHTML = obj.AccY||'-';
+      document.getElementById('AccZ').innerHTML = obj.AccZ||'-';
+      document.getElementById('Gyroscope').innerHTML = obj.Gyroscope||'-';
+      document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus||'-';
+      document.getElementById('LocalPressure').innerHTML = obj.LocalPressure||'-';
+      document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure||'-';
+      document.getElementById('PressureSource').innerHTML = obj.PressureSource||'-';
+      document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude||'-';
+      document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude||'-';
+      document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude||'-';
+      document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude||'-';
+      document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop||'-';
+      document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop||'-';
+      document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold||'-';
+      document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold||'-';
+      document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold||'-';
+      document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold||'-';
+      document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic||'-';
+      document.getElementById('TotalSpace').innerHTML = obj.TotalSpace||'-';
+      document.getElementById('UsedSpace').innerHTML = obj.UsedSpace||'-';
+      document.getElementById('SPIFFSTotalSpace').innerHTML = obj.SPIFFSTotalSpace || '-';
+      document.getElementById('SPIFFSUsedSpace').innerHTML = obj.SPIFFSUsedSpace || '-';
+      document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
+      document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
+      document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
+      document.getElementById('axisConfigDisplay').innerText = obj['Axis Config']||'-';
+      document.getElementById('SensorsCalibrated').innerHTML = (obj.SensorsCalibrated === true) ? "Yes" : (obj.SensorsCalibrated === false) ? "No" : "-";
+
+      if (obj.SpiffsWarning) {
+        document.getElementById('spiffsWarningBox').style.display = '';
+      } else {
+        document.getElementById('spiffsWarningBox').style.display = 'none';
+      }
+
+      if (obj.SensorsCalibWarning) {
+        document.getElementById('calibWarningBox').style.display = '';
+      } else {
+        document.getElementById('calibWarningBox').style.display = 'none';
+      }
+    }
+    window.onload = init;
+  </script>
+</body>
+</html>
+
+
 )rawliteral";
 
 // ---------------------------------------------------------------------------
@@ -2061,3 +2104,5 @@ void loop() {
   }
   delay(40);
 }
+
+
