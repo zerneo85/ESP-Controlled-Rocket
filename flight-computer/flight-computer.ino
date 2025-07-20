@@ -128,7 +128,7 @@ extern "C" {
 // -----------------------
 // #include "Freenove_WS2812_Lib_for_ESP32.h"
 #include <Adafruit_NeoPixel.h>
-#define LEDS_COUNT 42  // Number of LEDs in the strip
+#define LEDS_COUNT 41  // Number of LEDs in the strip
 #define LEDS_PIN 17    // GPIO pin for the LED strip data line
 #define CHANNEL 0      // PWM channel (if applicable)
 //Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
@@ -148,6 +148,8 @@ bool sensorModeFlight = true;     // true: Flight sensor mode; false: Visualizat
 int axisConfig = 3;               // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 bool sensorsCalibrated = false;   // true when calibrated
 bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
+bool triggerAbs = true;  // Trigger on both positive and negative acceleration by default
+
 
 
 // SD card storage info
@@ -175,8 +177,8 @@ const char *apPassword = "Rocket2022!";
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
 const char *openWeatherMapApiKey = "xxxxxxxxxx";  // Anonymized API key
-float currentLatitude = 52.42523004349591;                              // Anonymized Latitude
-float currentLongitude = 4.5483383178711;                              // Anonymized Longitude
+float currentLatitude = 52.42523004349591;        // Anonymized Latitude
+float currentLongitude = 4.5483383178711;         // Anonymized Longitude
 
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
@@ -491,19 +493,21 @@ const char *webpage = R"rawliteral(
     <input type="number" id="longitude" step="0.000001" value="4.36483383178711" placeholder="Longitude">
     <button id="BTN_SET_LOCATION" onclick="button_update_location()">Set Location</button>
   </div>
-  <div class="controls-row">
-    <label for='newAltThreshold'>Altitude Drop:</label>
-    <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
-    <label for='newAccX'>Acc X:</label>
-    <input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'>
-    <label for='newAccY'>Acc Y:</label>
-    <input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'>
-    <label for='newAccZ'>Acc Z:</label>
-    <input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'>
-    <label for='triggerLogic'>Trigger Logic:</label>
-    <select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select>
-    <button id='BTN_UPDATE_TRIGGERS' onclick="button_update_triggers()">Update Triggers Thresholds</button>
-  </div>
+<div class="controls-row">
+  <label for='newAltThreshold'>Altitude Drop:</label>
+  <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
+  <label for='newAccX'>Acc X:</label>
+  <input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'>
+  <label for='newAccY'>Acc Y:</label>
+  <input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'>
+  <label for='newAccZ'>Acc Z:</label>
+  <input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'>
+  <label for="triggerAbs">Trigger on both + and - Acc</label>
+  <input type="checkbox" id="triggerAbs" checked>
+  <label for='triggerLogic'>Trigger Logic:</label>
+  <select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select>
+  <button id='BTN_UPDATE_TRIGGERS' onclick="button_update_triggers()">Update Triggers Thresholds</button>
+</div>
   <div class="controls-row">
     <label for='axisConfig'>Axis Mapping Configuration:</label>
     <select id='axisConfig'>
@@ -537,20 +541,23 @@ const char *webpage = R"rawliteral(
       var lon = parseFloat(document.getElementById('longitude').value);
       Socket.send(JSON.stringify({ latitude: lat, longitude: lon }));
     }
-    function button_update_triggers(){
-      var altVal = parseFloat(document.getElementById('newAltThreshold').value);
-      var accXVal = parseFloat(document.getElementById('newAccX').value);
-      var accYVal = parseFloat(document.getElementById('newAccY').value);
-      var accZVal = parseFloat(document.getElementById('newAccZ').value);
-      var logicVal = document.getElementById('triggerLogic').value;
-      Socket.send(JSON.stringify({
-        newThreshold: altVal,
-        newAccX: accXVal,
-        newAccY: accYVal,
-        newAccZ: accZVal,
-        newTriggerLogic: logicVal
-      }));
-    }
+function button_update_triggers(){
+  var altVal = parseFloat(document.getElementById('newAltThreshold').value);
+  var accXVal = parseFloat(document.getElementById('newAccX').value);
+  var accYVal = parseFloat(document.getElementById('newAccY').value);
+  var accZVal = parseFloat(document.getElementById('newAccZ').value);
+  var logicVal = document.getElementById('triggerLogic').value;
+  var absVal = document.getElementById('triggerAbs').checked;
+  Socket.send(JSON.stringify({
+    newThreshold: altVal,
+    newAccX: accXVal,
+    newAccY: accYVal,
+    newAccZ: accZVal,
+    newTriggerLogic: logicVal,
+    triggerAbs: absVal
+  }));
+}
+
     function button_update_axis(){
       var v = parseInt(document.getElementById('axisConfig').value);
       Socket.send(JSON.stringify({ axisConfig: v }));
@@ -1505,6 +1512,11 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             Serial.print("New Trigger Logic: ");
             Serial.println(useAndLogic ? "AND" : "OR");
           }
+          if (doc.containsKey("triggerAbs")) {
+  triggerAbs = doc["triggerAbs"];
+  Serial.print("New Trigger Absolute (both sides): ");
+  Serial.println(triggerAbs ? "Yes" : "No");
+}
           if (doc.containsKey("calibrateSensors")) {
             calibrateSensors();
             Serial.println("Sensors calibrated.");
@@ -2015,9 +2027,17 @@ void loop() {
   // Check trigger conditions if the system is armed to possibly deploy the parachute
   if (parachuteStatus == "armed") {
     bool triggerAlt = (altitudeDrop >= altitudeDropThreshold);
-    bool triggerAccX = (fabs(relAccX) >= accXThreshold);
-    bool triggerAccY = (fabs(relAccY) >= accYThreshold);
-    bool triggerAccZ = (fabs(relAccZ) >= accZThreshold);
+bool triggerAccX, triggerAccY, triggerAccZ;
+if (triggerAbs) {
+  triggerAccX = (fabs(relAccX) >= accXThreshold);
+  triggerAccY = (fabs(relAccY) >= accYThreshold);
+  triggerAccZ = (fabs(relAccZ) >= accZThreshold);
+} else {
+  triggerAccX = (relAccX >= accXThreshold);
+  triggerAccY = (relAccY >= accYThreshold);
+  triggerAccZ = (relAccZ >= accZThreshold);
+}
+
     bool triggerCondition = useAndLogic ? (triggerAlt && triggerAccX && triggerAccY && triggerAccZ)
                                         : (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
     if (triggerCondition) {
