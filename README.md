@@ -20,6 +20,7 @@ The ESP Controlled Rocket repository documents an advanced, ESP32-powered flight
   - [SPIFFS Logging](#spiffs-logging)
 - [Rocket Performance (Simulation Results)](#rocket-performance-simulation-results)
 - [References & Further Simulation](#references--further-simulation)
+- [Rocket Weight](#rocket-weight)
 - [Contributing](#contributing)
 
 ---
@@ -151,7 +152,7 @@ See [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino)
 #### Dashboard, File Manager, and Visualization
 
 ![All dashboards video](media/all_dashboards.gif)  
-![Flight Computer Screenshot](media/flight_computer_dashboard_6.png)  
+![Flight Computer Screenshot](media/flight_computer_dashboard_0.png)  
 ![File Manager Screenshot](media/filemanager_dashboard_1.png)  
 ![Visualization Screenshot](media/visualization_dashboard_1.png)
 
@@ -243,6 +244,30 @@ Full details for both rocket builds are in the simulation PDFs, generated with [
 - *See PDFs in [`docs/`](docs/) for full simulation graphs and breakdown.*
 - *For further/different setups, use the [Air Command Rocket Simulator](http://www.aircommandrockets.com/sim/simulator.htm).*
 
+
+### Water Rocket Performance Table (8 bar, realistic empty mass)
+
+| Total Volume (L) | Empty Mass (g) | Water Amount (L) | Nozzle (mm) | Apogee (m) | Burnout Time (s) | Total Flight Time (s) |
+|:----------------:|:--------------:|:----------------:|:-----------:|:----------:|:----------------:|:---------------------:|
+| 1.5              | 200            | 0.5              | 7           |   103      | 1.5              |  9.7                  |
+| 1.5              | 200            | 0.5              | 20          |   115      | 0.31             |  10.3                 |
+| 4.5              | 800            | 1.5              | 7           |   108      | 2.5              |  10.5                 |
+| 4.5              | 800            | 1.5              | 20          |   118      | 0.45             |  11.0                 |
+| 7.5              | 900            | 2.5              | 7           |   128      | 2.8              |  12.2                 |
+| 7.5              | 900            | 2.5              | 20          |   140      | 0.49             |  12.7                 |
+| 10.5             | 1000           | 3.5              | 7           |   119      | 2.6              |  11.6                 |
+| 10.5             | 1000           | 3.5              | 20          |   134      | 0.56             |  12.2                 |
+
+#### Assumptions/Notes:
+- Pressure: **8 bar** (116 psi)
+- Water amount: ~**1/3 of total volume**
+- Empty mass: As shown for each bottle size
+- Drag coefficient: **0.5**
+- Nozzle: **7 mm** (long burn, smooth flight), **20 mm** (short, powerful burn, higher velocity)
+- Simulated/estimated values (for best-case efficiency)
+
+
+
 ---
 
 ## References & Further Simulation
@@ -252,6 +277,11 @@ Full details for both rocket builds are in the simulation PDFs, generated with [
 - [`docs/aircommandrockets_simulator_rocket_b.pdf`](docs/aircommandrockets_simulator_rocket_b.pdf) (Rocket B)
 
 ---
+
+
+## Rocket Weight
+
+See [`docs/rocket_weight.xlsx`](docs/rocket_weight.xlsx) for weight of the individual parts.
 
 ## Contributing
 

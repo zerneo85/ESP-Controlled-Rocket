@@ -1,13 +1,46 @@
 /*
- * Flight Computer Firmware for ESP32 - Integrated, Corrected & Enhanced Version (V3.5.0)
+ * Flight Computer Firmware for ESP32 – Version 3.6.0 (Major Dashboard & SPIFFS Update)
  *
- * Changes from previous versions:
- *  - Added comprehensive inline documentation to clarify code behavior.
- *  - Anonymized API key and location data (longitude and latitude).
- *  - Minor improvements to code readability and structure.
- *  - Corrected Axis mapping and user-selectable axis configuration.
- *  - **Added saving log data to both SD card and SPIFFS (with auto-disable if SPIFFS is almost full).**
- *  - Improved LED sequences to clearly indicate every state, including warnings.
+ * What’s new since 3.5.0:
+ *  - Full web dashboard redesign: introduced a modern 3-column layout for easier navigation and real-time data visibility.
+ *  - Improved SPIFFS management:
+ *      - Visual dashboard warning if SPIFFS is (almost) full.
+ *      - Automatic disable/enable of SPIFFS logging, with clear notifications.
+ *      - Cleaner SPIFFS log download/delete workflow in the web UI.
+ *  - Visual status for sensor calibration:
+ *      - Dashboard now shows clear sensor calibration state (calibrated/uncalibrated).
+ *      - Added colored indicators and tooltips for sensor health.
+ *  - New trigger options:
+ *      - Added checkbox in dashboard: user can now select triggers on both positive *and* negative value thresholds.
+ *      - Improved configurability for launch, arming, and release logic.
+ *  - Logging & diagnostics:
+ *      - Enhanced event and warning logs for easier troubleshooting.
+ *      - More precise dashboard error messages (especially for sensor faults, calibration, or full storage).
+ *  - Minor bugfixes and code clean-up.
+ *
+ * ┌───────────────────────────────────────────────┐
+ * │       New UI and Logging Features (3.6.0)     │
+ * └───────────────────────────────────────────────┘
+ *
+ *  • Dashboard:
+ *      – Responsive, flexible 3-column layout for flight, triggers, and diagnostics.
+ *      – Real-time SPIFFS and SD status. Direct file actions from dashboard.
+ *      – Sensor calibration status and quick calibration controls.
+ *      – Highlighted triggers (now support positive/negative thresholds).
+ *
+ *  • SPIFFS Management:
+ *      – Improved low-space detection (visual + LED + UI warning).
+ *      – One-click log export/clear.
+ *      – Logging is now auto-managed (disabled if SPIFFS nearly full, auto-resume when cleared).
+ *
+ *  • Triggers:
+ *      – New option: trigger on positive *and/or* negative value crossings.
+ *      – UI toggle for easy setup.
+ *
+ *  • Visual feedback:
+ *      – LED and dashboard feedback are now always in sync for critical events (calibration, logging, arming, etc).
+ *
+ * For details and troubleshooting, see the README or dashboard Help.
  *
  * ┌──────────────────────────────────────────────────────────────────────────────┐
  * │                         LED Behavior & System Status Summary                │
@@ -148,7 +181,7 @@ bool sensorModeFlight = true;     // true: Flight sensor mode; false: Visualizat
 int axisConfig = 3;               // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 bool sensorsCalibrated = false;   // true when calibrated
 bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
-bool triggerAbs = true;  // Trigger on both positive and negative acceleration by default
+bool triggerAbs = true;           // Trigger on both positive and negative acceleration by default
 
 
 
@@ -179,7 +212,6 @@ const char *apPassword = "Rocket2022!";
 const char *openWeatherMapApiKey = "xxxxxxxxxx";  // Anonymized API key
 float currentLatitude = 52.42523004349591;        // Anonymized Latitude
 float currentLongitude = 4.5483383178711;         // Anonymized Longitude
-
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -511,8 +543,8 @@ const char *webpage = R"rawliteral(
   <div class="controls-row">
     <label for='axisConfig'>Axis Mapping Configuration:</label>
     <select id='axisConfig'>
-      <option value='0'>0 - Swap x>X and y>Z and z>Y</option>
-      <option value='1'>1 - Swap x>X and y>Y and z>Z</option>
+      <option value='0'>0 - Swap x>-X and y>Y and z>Z</option>
+      <option value='1'>1 - Swap x>-X and y>Y and z>Z</option>
       <option value='2'>2 - Swap x>Y and y>X and z>Z</option>
       <option value='3'>3 - Swap x>Y and y>Z and z>X</option>
       <option value='4'>4 - Swap x>Z and y>Y and z>X</option>
@@ -520,6 +552,42 @@ const char *webpage = R"rawliteral(
     </select>
     <button onclick="button_update_axis()">Update Axis Mapping</button>
   </div>
+
+
+
+<!-- Water Rocket Performance Table (8 bar, realistic empty mass) -->
+<div style="max-width: 800px; margin: 40px auto 25px auto; font-family: Arial, sans-serif;">
+  <h2 style="text-align:center; margin-bottom: 12px;">Water Rocket Performance Table <span style="font-size:0.7em; font-weight:normal;">(8 bar, realistic empty mass)</span></h2>
+  <table style="margin: 0 auto; border-collapse: collapse; min-width: 650px; background: #fff;">
+    <caption style="caption-side:top; font-weight:bold; margin-bottom:8px; color:#222;">All results at 8 bar pressure</caption>
+    <tr style="background:#3949ab; color:#fff;">
+      <th>Total Volume (L)</th>
+      <th>Empty Mass (g)</th>
+      <th>Water Amount (L)</th>
+      <th>Nozzle (mm)</th>
+      <th>Apogee (m)</th>
+      <th>Burnout Time (s)</th>
+      <th>Total Flight Time (s)</th>
+    </tr>
+    <tr><td>1.5</td><td>200</td><td>0.5</td><td>7</td><td>103</td><td>1.5</td><td>9.7</td></tr>
+    <tr><td>1.5</td><td>200</td><td>0.5</td><td>20</td><td>115</td><td>0.31</td><td>10.3</td></tr>
+    <tr><td>4.5</td><td>800</td><td>1.5</td><td>7</td><td>108</td><td>2.5</td><td>10.5</td></tr>
+    <tr><td>4.5</td><td>800</td><td>1.5</td><td>20</td><td>118</td><td>0.45</td><td>11.0</td></tr>
+    <tr><td>7.5</td><td>900</td><td>2.5</td><td>7</td><td>128</td><td>2.8</td><td>12.2</td></tr>
+    <tr><td>7.5</td><td>900</td><td>2.5</td><td>20</td><td>140</td><td>0.49</td><td>12.7</td></tr>
+    <tr><td>10.5</td><td>1000</td><td>3.5</td><td>7</td><td>119</td><td>2.6</td><td>11.6</td></tr>
+    <tr><td>10.5</td><td>1000</td><td>3.5</td><td>20</td><td>134</td><td>0.56</td><td>12.2</td></tr>
+  </table>
+  <ul style="margin:14px auto 0 auto; max-width:570px; color:#1a237e; font-size:1em;">
+    <li><b>Pressure:</b> 8 bar (116 psi)</li>
+    <li><b>Water amount:</b> approx. 1/3 of total volume</li>
+    <li><b>Empty mass:</b> as listed per bottle size</li>
+    <li><b>Drag coefficient:</b> 0.5</li>
+    <li><b>Nozzle 7 mm:</b> Long burn, smooth flight</li>
+    <li><b>Nozzle 20 mm:</b> Short, powerful burn, higher initial velocity</li>
+    <li>Simulated/estimated values for optimal efficiency</li>
+  </ul>
+</div>
 
 
 </body>
@@ -613,6 +681,12 @@ function button_update_triggers(){
     }
     window.onload = init;
   </script>
+
+
+
+
+
+
 </body>
 </html>
 
@@ -1037,14 +1111,14 @@ void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY,
   switch (axisConfig) {
     case 0:
       // Default transformation (as currently implemented).
-      // Mapping: Swap x>X and y>Z and z>Y
-      corrX = rawX;
-      corrY = rawZ;
-      corrZ = rawY;
+      // Mapping: Swap x>-X and y>Z and z>Y
+      corrX = -rawX;
+      corrY = rawY;
+      corrZ = rawZ;
       break;
     case 1:
-      // Variant 1: Mapping: Swap x>X and y>Y and z>Z
-      corrX = rawX;
+      // Variant 1: Mapping: Swap x>-X and y>Y and z>Z
+      corrX = -rawX;
       corrY = rawY;
       corrZ = rawZ;
       break;
@@ -1084,10 +1158,10 @@ void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY,
 // NeoPixel color wheel helper, same as Adafruit's demo
 uint32_t Wheel(byte WheelPos) {
   WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
+  if (WheelPos < 85) {
     return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
   }
-  if(WheelPos < 170) {
+  if (WheelPos < 170) {
     WheelPos -= 85;
     return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
@@ -1113,9 +1187,8 @@ void initLEDColors() {
 // Set all LEDs to a specific color
 void setAllLEDs(uint32_t color) {
   for (int i = 0; i < LEDS_COUNT; i++) {
-   // strip.setLedColorData(i, color);
+    // strip.setLedColorData(i, color);
     strip.setPixelColor(i, color);
-
   }
   strip.show();
 }
@@ -1128,9 +1201,8 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
       for (uint16_t i = 0; i < LEDS_COUNT; i++) {
         uint8_t wheelIndex = (((i * 256 / LEDS_COUNT) + (direction * j) + 256) % 256);
         uint32_t color = Wheel(wheelIndex);
-       //strip.setLedColorData(i, color);
-       strip.setPixelColor(i, color);
-
+        //strip.setLedColorData(i, color);
+        strip.setPixelColor(i, color);
       }
       // 2) Now *one* show() for the whole frame:
       strip.show();
@@ -1148,7 +1220,7 @@ void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t ro
   for (uint16_t r = 0; r < rotations; r++) {
     if (direction >= 0) {
       for (int i = 0; i < LEDS_COUNT; i++) {
-       // strip.setLedColorData(i, color);
+        // strip.setLedColorData(i, color);
         strip.setPixelColor(i, color);
 
         strip.show();
@@ -1156,8 +1228,8 @@ void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t ro
       }
     } else {
       for (int i = LEDS_COUNT - 1; i >= 0; i--) {
-      //  strip.setLedColorData(i, color);
-      strip.setPixelColor(i, color);
+        //  strip.setLedColorData(i, color);
+        strip.setPixelColor(i, color);
 
         strip.show();
         delay(40);
@@ -1513,10 +1585,10 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             Serial.println(useAndLogic ? "AND" : "OR");
           }
           if (doc.containsKey("triggerAbs")) {
-  triggerAbs = doc["triggerAbs"];
-  Serial.print("New Trigger Absolute (both sides): ");
-  Serial.println(triggerAbs ? "Yes" : "No");
-}
+            triggerAbs = doc["triggerAbs"];
+            Serial.print("New Trigger Absolute (both sides): ");
+            Serial.println(triggerAbs ? "Yes" : "No");
+          }
           if (doc.containsKey("calibrateSensors")) {
             calibrateSensors();
             Serial.println("Sensors calibrated.");
@@ -2027,16 +2099,16 @@ void loop() {
   // Check trigger conditions if the system is armed to possibly deploy the parachute
   if (parachuteStatus == "armed") {
     bool triggerAlt = (altitudeDrop >= altitudeDropThreshold);
-bool triggerAccX, triggerAccY, triggerAccZ;
-if (triggerAbs) {
-  triggerAccX = (fabs(relAccX) >= accXThreshold);
-  triggerAccY = (fabs(relAccY) >= accYThreshold);
-  triggerAccZ = (fabs(relAccZ) >= accZThreshold);
-} else {
-  triggerAccX = (relAccX >= accXThreshold);
-  triggerAccY = (relAccY >= accYThreshold);
-  triggerAccZ = (relAccZ >= accZThreshold);
-}
+    bool triggerAccX, triggerAccY, triggerAccZ;
+    if (triggerAbs) {
+      triggerAccX = (fabs(relAccX) >= accXThreshold);
+      triggerAccY = (fabs(relAccY) >= accYThreshold);
+      triggerAccZ = (fabs(relAccZ) >= accZThreshold);
+    } else {
+      triggerAccX = (relAccX >= accXThreshold);
+      triggerAccY = (relAccY >= accYThreshold);
+      triggerAccZ = (relAccZ >= accZThreshold);
+    }
 
     bool triggerCondition = useAndLogic ? (triggerAlt && triggerAccX && triggerAccY && triggerAccZ)
                                         : (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
@@ -2124,5 +2196,3 @@ if (triggerAbs) {
   }
   delay(40);
 }
-
-

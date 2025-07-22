@@ -6,10 +6,10 @@
   Mapping variants from 0 to 5 are supported as follows:
 
     Variant 0 (Default):
-      - Mapping: Swap x>X and y>Z and z>Y
+      - Mapping: Swap x>-X and y>Z and z>Y
    
     Variant 1:
-      - Mapping: Swap x>X and y>Y and z>Z
+      - Mapping: Swap x>-X and y>Y and z>Z
   
     Variant 2:
       - Mapping: Swap x>Y and y>X and z>Z
@@ -129,8 +129,8 @@ function mapGyroToRotation(data, axisConfig) {
   switch(axisConfig) {
     case 0:
     // Variant 0 (Default):
-    //   - Mapping: Swap x>X and y>Z and z>Y
-      rot.rotX = data.gyroX;
+    //   - Mapping: Swap x>-X and y>Z and z>Y
+      rot.rotX = -data.gyroX;
       rot.rotY = data.gyroZ;
       rot.rotZ = data.gyroY;
       break;
@@ -138,7 +138,7 @@ function mapGyroToRotation(data, axisConfig) {
       case 1:
     // Variant 1:
     //   - Mapping: Swap x>X and y>Y and z>Z
-      rot.rotX = data.gyroX;
+      rot.rotX = -data.gyroX;
       rot.rotY = data.gyroY;
       rot.rotZ = data.gyroZ;
       break;
