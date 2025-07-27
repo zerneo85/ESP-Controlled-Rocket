@@ -132,8 +132,8 @@
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BMP280.h>
-#include <Adafruit_MPU6050.h>
+// #include <Adafruit_BMP280.h>
+// #include <Adafruit_MPU6050.h>
 #include <SD_MMC.h>
 #include "sd_read_write.h"
 #include <ESP32Servo.h>
@@ -183,6 +183,10 @@ bool sensorsCalibrated = false;   // true when calibrated
 bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
 bool triggerAbs = true;           // Trigger on both positive and negative acceleration by default
 String triggeredBy = "NotTriggered";
+bool enAltDrop = true;
+bool enAccX = true;
+bool enAccY = true;
+bool enAccZ = true;
 
 
 
@@ -406,6 +410,30 @@ const char *webpage = R"rawliteral(
       background-color: #0055AA;
     }
 
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  margin: 0 auto 12px auto;
+  max-width: 900px;
+  align-items: center; /* Add this line! */
+}
+
+.controls-row label,
+.controls-row input,
+.controls-row select,
+.controls-row button {
+  vertical-align: middle; /* Helps, but align-items:center is the real fix */
+}
+
+/* Optionally, make checkboxes more centered */
+.controls-row input[type='checkbox'] {
+  transform: translateY(1px); /* Or 2px if needed */
+}
+
+
+
     /* Input styling */
     .controls-row {
       display: flex;
@@ -529,12 +557,20 @@ const char *webpage = R"rawliteral(
 <div class="controls-row">
   <label for='newAltThreshold'>Altitude Drop:</label>
   <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
+  <input type="checkbox" id="chkAltDrop" checked> <label for="chkAltDrop">Enable</label>
+  
   <label for='newAccX'>Acc X:</label>
   <input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'>
+  <input type="checkbox" id="chkAccX" checked> <label for="chkAccX">Enable</label>
+  
   <label for='newAccY'>Acc Y:</label>
   <input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'>
+  <input type="checkbox" id="chkAccY" checked> <label for="chkAccY">Enable</label>
+  
   <label for='newAccZ'>Acc Z:</label>
   <input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'>
+  <input type="checkbox" id="chkAccZ" checked> <label for="chkAccZ">Enable</label>
+  
   <label for="triggerAbs">Trigger on both + and - Acc</label>
   <input type="checkbox" id="triggerAbs" checked>
   <label for='triggerLogic'>Trigger Logic:</label>
@@ -617,13 +653,22 @@ function button_update_triggers(){
   var accZVal = parseFloat(document.getElementById('newAccZ').value);
   var logicVal = document.getElementById('triggerLogic').value;
   var absVal = document.getElementById('triggerAbs').checked;
+  // NEW: Get checkbox states
+  var enAltDrop = document.getElementById('chkAltDrop').checked;
+  var enAccX = document.getElementById('chkAccX').checked;
+  var enAccY = document.getElementById('chkAccY').checked;
+  var enAccZ = document.getElementById('chkAccZ').checked;
   Socket.send(JSON.stringify({
     newThreshold: altVal,
     newAccX: accXVal,
     newAccY: accYVal,
     newAccZ: accZVal,
     newTriggerLogic: logicVal,
-    triggerAbs: absVal
+    triggerAbs: absVal,
+    enAltDrop: enAltDrop,
+    enAccX: enAccX,
+    enAccY: enAccY,
+    enAccZ: enAccZ
   }));
 }
 
@@ -1194,6 +1239,7 @@ void setAllLEDs(uint32_t color) {
   strip.show();
 }
 
+/*
 // Display a rainbow cycle on the LEDs for a given number of rotations
 void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1) {
   for (uint16_t r = 0; r < rotations; r++) {
@@ -1214,7 +1260,7 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
     delay(100);
   }
 }
-
+*/
 
 // Sequentially display a color across the LED strip
 void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t rotations = 1) {
@@ -1584,6 +1630,26 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             Serial.print("New Accelerometer Z threshold: ");
             Serial.println(accZThreshold);
           }
+
+          // NEW: handle trigger checkbox updates
+          if (doc.containsKey("enAltDrop")) {
+            enAltDrop = doc["enAltDrop"];
+            Serial.printf("Enable Altitude Drop Trigger: %s\n", enAltDrop ? "Yes" : "No");
+          }
+          if (doc.containsKey("enAccX")) {
+            enAccX = doc["enAccX"];
+            Serial.printf("Enable AccX Trigger: %s\n", enAccX ? "Yes" : "No");
+          }
+          if (doc.containsKey("enAccY")) {
+            enAccY = doc["enAccY"];
+            Serial.printf("Enable AccY Trigger: %s\n", enAccY ? "Yes" : "No");
+          }
+          if (doc.containsKey("enAccZ")) {
+            enAccZ = doc["enAccZ"];
+            Serial.printf("Enable AccZ Trigger: %s\n", enAccZ ? "Yes" : "No");
+          }
+
+
           if (doc.containsKey("newTriggerLogic")) {
             String newLogic = doc["newTriggerLogic"];
             useAndLogic = (newLogic == "AND");
@@ -1618,6 +1684,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             Serial.println("Parachute unarmed command processed.");
           }
 
+
           // NEW: handle location updates
           if (doc.containsKey("latitude") && doc.containsKey("longitude")) {
             currentLatitude = doc["latitude"];
@@ -1646,7 +1713,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
 
 void parachuteUnarmed() {
   parachuteStatus = "unarmed";
-    triggeredBy = "NotTriggered";
+  triggeredBy = "NotTriggered";
   baselineCaptured = false;  // Optional: Clear baseline so it's recalculated next time
   if (!alreadyWarned) {
     setAllLEDs(blueColor);  // Blue = unarmed/safe
@@ -1673,12 +1740,12 @@ void setup() {
   }
 
   if (!SPIFFS.exists("/log.csv")) {
-  File spiffsFile = SPIFFS.open("/log.csv", FILE_WRITE);
-  if (spiffsFile) {
-    spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
-    spiffsFile.close();
+    File spiffsFile = SPIFFS.open("/log.csv", FILE_WRITE);
+    if (spiffsFile) {
+      spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
+      spiffsFile.close();
+    }
   }
-}
 
 
 
@@ -1767,10 +1834,10 @@ void setup() {
       Serial.println("No previous log file found.");
     }
     File file = SD_MMC.open(oldLogFile.c_str(), FILE_WRITE);
-if (file) {
-  file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
-  file.close();
-}
+    if (file) {
+      file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
+      file.close();
+    }
   }
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
@@ -2003,151 +2070,166 @@ void loop() {
   if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
   if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
 
-  // --- NEW: Track TriggeredBy column ---
-  static String triggeredBy = "NotTriggered";
+  // ----------- Check trigger conditions, track TriggeredBy -----------
   triggeredBy = "NotTriggered";
+  if (parachuteStatus == "armed") {
+    // Evaluate only enabled triggers
+    bool triggerAlt = enAltDrop ? (altitudeDrop >= altitudeDropThreshold) : false;
+    bool triggerAccX = enAccX ? (triggerAbs ? (fabs(relAccX) >= accXThreshold) : (relAccX >= accXThreshold)) : false;
+    bool triggerAccY = enAccY ? (triggerAbs ? (fabs(relAccY) >= accYThreshold) : (relAccY >= accYThreshold)) : false;
+    bool triggerAccZ = enAccZ ? (triggerAbs ? (fabs(relAccZ) >= accZThreshold) : (relAccZ >= accZThreshold)) : false;
 
-  // Print sensor info (unchanged)
+    // Build triggers array for generic AND/OR logic
+    bool triggers[] = { triggerAlt, triggerAccX, triggerAccY, triggerAccZ };
+
+    // Check which are enabled for logic
+    bool enabled[] = { enAltDrop, enAccX, enAccY, enAccZ };
+    bool anyEnabled = enAltDrop || enAccX || enAccY || enAccZ;
+
+    bool triggerCondition = false;
+    if (anyEnabled) {
+      if (useAndLogic) {
+        triggerCondition = true;
+        for (int i = 0; i < 4; i++) {
+          if (enabled[i] && !triggers[i]) triggerCondition = false;
+        }
+      } else {
+        for (int i = 0; i < 4; i++) {
+          if (enabled[i] && triggers[i]) triggerCondition = true;
+        }
+      }
+    }
+
+    // Track what triggered
+    if (triggerCondition) {
+      // Build a comma-separated list
+      String triggersList = "";
+      if (triggerAlt) triggersList += "Threshold Altitude Drop,";
+      if (triggerAccX) triggersList += "Threshold AccX,";
+      if (triggerAccY) triggersList += "Threshold AccY,";
+      if (triggerAccZ) triggersList += "Threshold AccZ,";
+      // Remove trailing comma if present
+      if (triggersList.length() > 0) triggersList.remove(triggersList.length() - 1);
+      triggeredBy = triggersList;
+      parachuteRelease();
+    }
+  }
+
+  // --- Print sensor info (now uses updated triggeredBy) ---
   if (debugSerial) {
     Serial.print(getTimeStampString());
-    Serial.print(" BMP280 Temp: "); Serial.println(bmpTemp);
+    Serial.print(" BMP280 Temp: ");
+    Serial.println(bmpTemp);
     Serial.print(getTimeStampString());
-    Serial.print(" BMP280 Pressure: "); Serial.println(pressure);
+    Serial.print(" BMP280 Pressure: ");
+    Serial.println(pressure);
     Serial.print(getTimeStampString());
-    Serial.print(" Absolute Altitude: "); Serial.println(absoluteAltitude);
+    Serial.print(" Absolute Altitude: ");
+    Serial.println(absoluteAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Relative Altitude: "); Serial.println(relativeAltitude);
+    Serial.print(" Relative Altitude: ");
+    Serial.println(relativeAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Altitude Drop: "); Serial.println(altitudeDrop);
+    Serial.print(" Altitude Drop: ");
+    Serial.println(altitudeDrop);
     Serial.print(getTimeStampString());
-    Serial.print(" MPU6050 Temp: "); Serial.println(temp.temperature);
+    Serial.print(" MPU6050 Temp: ");
+    Serial.println(temp.temperature);
     Serial.print(getTimeStampString());
     Serial.print(" Accelerometer (raw): ");
-    Serial.print(rawAccX); Serial.print(", ");
-    Serial.print(rawAccY); Serial.print(", ");
+    Serial.print(rawAccX);
+    Serial.print(", ");
+    Serial.print(rawAccY);
+    Serial.print(", ");
     Serial.println(rawAccZ);
     Serial.print(getTimeStampString());
     Serial.print(" Accelerometer (calibrated): ");
-    Serial.print(relAccX); Serial.print(", ");
-    Serial.print(relAccY); Serial.print(", ");
+    Serial.print(relAccX);
+    Serial.print(", ");
+    Serial.print(relAccY);
+    Serial.print(", ");
     Serial.println(relAccZ);
     Serial.print(getTimeStampString());
     Serial.print(" Gyroscope (raw): ");
-    Serial.print(g.gyro.x); Serial.print(", ");
-    Serial.print(g.gyro.y); Serial.print(", ");
+    Serial.print(g.gyro.x);
+    Serial.print(", ");
+    Serial.print(g.gyro.y);
+    Serial.print(", ");
     Serial.println(g.gyro.z);
     Serial.print(getTimeStampString());
-    Serial.print(" Local Pressure: "); Serial.println(lastLocalPressure);
+    Serial.print(" Local Pressure: ");
+    Serial.println(lastLocalPressure);
     Serial.print(getTimeStampString());
-    Serial.print(" Parachute Status: "); Serial.println(parachuteStatus);
+    Serial.print(" Parachute Status: ");
+    Serial.println(parachuteStatus);
     Serial.print(getTimeStampString());
-    Serial.print(" Max Abs Altitude: "); Serial.print(maxAbsoluteAltitude);
-    Serial.print(" m, Min Abs Altitude: "); Serial.println(minAbsoluteAltitude);
+    Serial.print(" Max Abs Altitude: ");
+    Serial.print(maxAbsoluteAltitude);
+    Serial.print(" m, Min Abs Altitude: ");
+    Serial.println(minAbsoluteAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Max Rel Altitude: "); Serial.print(maxRelativeAltitude);
-    Serial.print(" m, Min Rel Altitude: "); Serial.println(minRelativeAltitude);
+    Serial.print(" Max Rel Altitude: ");
+    Serial.print(maxRelativeAltitude);
+    Serial.print(" m, Min Rel Altitude: ");
+    Serial.println(minRelativeAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Thresholds: AltDrop="); Serial.print(altitudeDropThreshold);
-    Serial.print(" AccX="); Serial.print(accXThreshold);
-    Serial.print(" AccY="); Serial.print(accYThreshold);
-    Serial.print(" AccZ="); Serial.print(accZThreshold);
-    Serial.print(" TriggerLogic="); Serial.print(useAndLogic ? "AND" : "OR");
-    Serial.print(" AxisConfig="); Serial.print(axisConfig);
-    Serial.print(" Lat="); Serial.print(currentLatitude, 6);
-    Serial.print(" Lon="); Serial.println(currentLongitude, 6);
+    Serial.print(" Thresholds: AltDrop=");
+    Serial.print(altitudeDropThreshold);
+    Serial.print(" AccX=");
+    Serial.print(accXThreshold);
+    Serial.print(" AccY=");
+    Serial.print(accYThreshold);
+    Serial.print(" AccZ=");
+    Serial.print(accZThreshold);
+    Serial.print(" TriggerLogic=");
+    Serial.print(useAndLogic ? "AND" : "OR");
+    Serial.print(" AxisConfig=");
+    Serial.print(axisConfig);
+    Serial.print(" Lat=");
+    Serial.print(currentLatitude, 6);
+    Serial.print(" Lon=");
+    Serial.println(currentLongitude, 6);
     Serial.print(getTimeStampString());
-    Serial.print(" TriggeredBy: "); Serial.println(triggeredBy);
+    Serial.print(" TriggeredBy: ");
+    Serial.println(triggeredBy);
     Serial.println("--------------------");
   }
 
   // --- LOG FORMAT (add all extra columns) ---
-  // CSV HEADER suggestion:
-  // Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,
-  // RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,
-  // GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,
-  // Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,
-  // Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,
-  // AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy
-
   char dataString[700];
   String currentTimestamp = getTimeStampString();
 
   snprintf(dataString, sizeof(dataString),
-    "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1013.25,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s\n",
-    currentTimestamp.c_str(),       // Timestamp
-    bmpTemp,                        // BMP Temp
-    pressure,                       // Pressure
-    absoluteAltitude,               // Abs Alt
-    relativeAltitude,               // Rel Alt
-    altitudeDrop,                   // Alt Drop
-    temp.temperature,               // MPU Temp
-    rawAccX, rawAccY, rawAccZ,      // Raw Acc X/Y/Z
-    relAccX, relAccY, relAccZ,      // Calibrated Acc X/Y/Z
-    g.gyro.x, g.gyro.y, g.gyro.z,   // Gyro X/Y/Z
-    parachuteStatus.c_str(),        // Parachute Status
-    lastLocalPressure,              // Local Pressure
-    PressureSource.c_str(),         // API Status
-    maxAbsoluteAltitude, minAbsoluteAltitude,
-    maxRelativeAltitude, minRelativeAltitude,
-    maxAltitudeDrop, minAltitudeDrop,
-    totalSpace, usedSpace,          // SD stats
-    spiffsTotal, spiffsUsed,        // SPIFFS stats
-    currentLatitude, currentLongitude,
-    altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
-    useAndLogic ? "AND" : "OR",     // Trigger logic
-    axisConfig,                     // Axis config
-    triggeredBy.c_str()             // Triggered By
+           "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1013.25,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s\n",
+           currentTimestamp.c_str(),      // Timestamp
+           bmpTemp,                       // BMP Temp
+           pressure,                      // Pressure
+           absoluteAltitude,              // Abs Alt
+           relativeAltitude,              // Rel Alt
+           altitudeDrop,                  // Alt Drop
+           temp.temperature,              // MPU Temp
+           rawAccX, rawAccY, rawAccZ,     // Raw Acc X/Y/Z
+           relAccX, relAccY, relAccZ,     // Calibrated Acc X/Y/Z
+           g.gyro.x, g.gyro.y, g.gyro.z,  // Gyro X/Y/Z
+           parachuteStatus.c_str(),       // Parachute Status
+           lastLocalPressure,             // Local Pressure
+           PressureSource.c_str(),        // API Status
+           maxAbsoluteAltitude, minAbsoluteAltitude,
+           maxRelativeAltitude, minRelativeAltitude,
+           maxAltitudeDrop, minAltitudeDrop,
+           totalSpace, usedSpace,    // SD stats
+           spiffsTotal, spiffsUsed,  // SPIFFS stats
+           currentLatitude, currentLongitude,
+           altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
+           useAndLogic ? "AND" : "OR",  // Trigger logic
+           axisConfig,                  // Axis config
+           triggeredBy.c_str()          // Triggered By
   );
 
   checkSpiffsSpaceAndWarn();
   appendFile(SD_MMC, "/log.csv", dataString);
   if ((parachuteStatus == "armed" || parachuteStatus == "released") && spiffsLoggingAllowed) {
     appendFile(SPIFFS, "/log.csv", dataString);
-  }
-
-  // ----------- Check trigger conditions, track TriggeredBy -----------
-  if (parachuteStatus == "armed") {
-    bool triggerAlt = (altitudeDrop >= altitudeDropThreshold);
-    bool triggerAccX, triggerAccY, triggerAccZ;
-    if (triggerAbs) {
-      triggerAccX = (fabs(relAccX) >= accXThreshold);
-      triggerAccY = (fabs(relAccY) >= accYThreshold);
-      triggerAccZ = (fabs(relAccZ) >= accZThreshold);
-    } else {
-      triggerAccX = (relAccX >= accXThreshold);
-      triggerAccY = (relAccY >= accYThreshold);
-      triggerAccZ = (relAccZ >= accZThreshold);
-    }
-
-    // Track which trigger is responsible
-    if (triggerAlt) {
-      triggeredBy = "Threshold Altitude Drop";
-    }
-    if (triggerAccX) {
-      if (triggeredBy == "NotTriggered") triggeredBy = "Threshold AccX";
-      else triggeredBy += ",AccX";
-    }
-    if (triggerAccY) {
-      if (triggeredBy == "NotTriggered") triggeredBy = "Threshold AccY";
-      else triggeredBy += ",AccY";
-    }
-    if (triggerAccZ) {
-      if (triggeredBy == "NotTriggered") triggeredBy = "Threshold AccZ";
-      else triggeredBy += ",AccZ";
-    }
-
-    bool triggerCondition = useAndLogic ?
-      (triggerAlt && triggerAccX && triggerAccY && triggerAccZ) :
-      (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
-
-    if (triggerCondition) {
-      // Here you could also, in the future, add timer triggers
-          if (triggerAlt) triggeredBy = "Threshold Altitude Drop";
-    else if (triggerAccX) triggeredBy = "Threshold AccX";
-    else if (triggerAccY) triggeredBy = "Threshold AccY";
-    else if (triggerAccZ) triggeredBy = "Threshold AccZ";
-      parachuteRelease();
-    }
   }
 
   // --- WebSocket Output (also includes new fields) ---
