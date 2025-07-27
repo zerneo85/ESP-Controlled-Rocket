@@ -178,10 +178,11 @@ bool alreadyWarned = false;
 bool apiSuccess = false;
 bool debugSerial = false;         // Enable/disable serial debug printing
 bool sensorModeFlight = true;     // true: Flight sensor mode; false: Visualization mode
-int axisConfig = 3;               // 0 = default mapping, 1 = alternative mapping (or more states as needed)
+int axisConfig = 1;               // 0 = default mapping, 1 = alternative mapping (or more states as needed)
 bool sensorsCalibrated = false;   // true when calibrated
 bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
 bool triggerAbs = true;           // Trigger on both positive and negative acceleration by default
+String triggeredBy = "NotTriggered";
 
 
 
@@ -209,9 +210,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "xxxxxxxxxx";  // Anonymized API key
-float currentLatitude = 52.42523004349591;        // Anonymized Latitude
-float currentLongitude = 4.5483383178711;         // Anonymized Longitude
+const char *openWeatherMapApiKey = "4ebe45a774a5b74364992dc2f83fc597";  // Anonymized API key
+float currentLatitude = 52.03323004349591;                              // Anonymized Latitude
+float currentLongitude = 4.36483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -1448,6 +1449,8 @@ void parachuteRelease() {
 // Arms the parachute system, captures baseline altitude, and initializes sensor calibration.
 void parachuteArmed() {
 
+  triggeredBy = "NotTriggered";
+
   if (!sensorsCalibrated) {
     // Flash orange LEDs as a warning
     blinkColor(orangeColor, 15, 100);  // 15 times, 80 ms on/off (adjust as needed)
@@ -1493,6 +1496,9 @@ void parachuteArmed() {
 
 // Calibrates sensors by capturing baseline altitude and accelerometer offsets.
 void calibrateSensors() {
+
+  triggeredBy = "NotTriggered";
+
   Serial.println("Calibrating sensors...");
   parachutePreStatus = parachuteStatus;
   parachuteStatus = "calibrating";
@@ -1640,6 +1646,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
 
 void parachuteUnarmed() {
   parachuteStatus = "unarmed";
+    triggeredBy = "NotTriggered";
   baselineCaptured = false;  // Optional: Clear baseline so it's recalculated next time
   if (!alreadyWarned) {
     setAllLEDs(blueColor);  // Blue = unarmed/safe
@@ -1664,6 +1671,16 @@ void setup() {
   } else {
     Serial.println("SPIFFS mounted successfully");
   }
+
+  if (!SPIFFS.exists("/log.csv")) {
+  File spiffsFile = SPIFFS.open("/log.csv", FILE_WRITE);
+  if (spiffsFile) {
+    spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
+    spiffsFile.close();
+  }
+}
+
+
 
   // Disable WiFi power saving mode
   WiFi.setSleep(false);
@@ -1750,10 +1767,10 @@ void setup() {
       Serial.println("No previous log file found.");
     }
     File file = SD_MMC.open(oldLogFile.c_str(), FILE_WRITE);
-    if (file) {
-      file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,AccX,AccY,AccZ,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space");
-      file.close();
-    }
+if (file) {
+  file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
+  file.close();
+}
   }
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
@@ -1944,159 +1961,151 @@ void loop() {
   server.handleClient();
   webSocket.loop();
 
-  // Update pressure from API if connected, or flag for future update if not
+  // Update pressure from API if needed
   if (WiFi.status() == WL_CONNECTED) {
-    if (!apiPressureUpdated) {
-      updatePressureFromAPI();
-    }
+    if (!apiPressureUpdated) updatePressureFromAPI();
   } else {
     apiPressureUpdated = false;
   }
 
-  // Update SD card space statistics
+  // Update SD and SPIFFS stats
   totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
   usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
-  // Update SPIFF card space statistics
   size_t spiffsTotal = SPIFFS.totalBytes() / 1024;
   size_t spiffsUsed = SPIFFS.usedBytes() / 1024;
 
-
-
-  // Read sensor values from BMP and MPU
+  // Sensor reads
   float bmpTemp = bmp.readTemperature();
+  float pressure = bmp.readPressure() / 100.0F;
   float absoluteAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  // Calculate relative altitude based on baseline if parachute is armed
-  float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
-  if (absoluteAltitude > maxAbsoluteAltitude)
-    maxAbsoluteAltitude = absoluteAltitude;
-  if (absoluteAltitude < minAbsoluteAltitude)
-    minAbsoluteAltitude = absoluteAltitude;
-  if (relativeAltitude > maxRelativeAltitude)
-    maxRelativeAltitude = relativeAltitude;
-  if (relativeAltitude < minRelativeAltitude)
-    minRelativeAltitude = relativeAltitude;
-
-  // Calculate altitude drop based on armed state
-  float altitudeDrop = (parachuteStatus == "armed") ? armedMaxRelativeAltitude - relativeAltitude : maxRelativeAltitude - relativeAltitude;
-  if (altitudeDrop > maxAltitudeDrop)
-    maxAltitudeDrop = altitudeDrop;
-  if (altitudeDrop < minAltitudeDrop)
-    minAltitudeDrop = altitudeDrop;
-
-  // Calculate corrected accelerometer readings subtracting calibration offsets
+  // Axis correction + calibration
   float corrAx, corrAy, corrAz;
   correctAxes(a.acceleration.x, a.acceleration.y, a.acceleration.z, corrAx, corrAy, corrAz);
   float relAccX = corrAx - accXOffset;
   float relAccY = corrAy - accYOffset;
   float relAccZ = corrAz - accZOffset;
 
-  // Print detailed sensor readings to serial if enabled
+  // Raw readings
+  float rawAccX = a.acceleration.x;
+  float rawAccY = a.acceleration.y;
+  float rawAccZ = a.acceleration.z;
+
+  // Altitude & drops
+  float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
+  if (absoluteAltitude > maxAbsoluteAltitude) maxAbsoluteAltitude = absoluteAltitude;
+  if (absoluteAltitude < minAbsoluteAltitude) minAbsoluteAltitude = absoluteAltitude;
+  if (relativeAltitude > maxRelativeAltitude) maxRelativeAltitude = relativeAltitude;
+  if (relativeAltitude < minRelativeAltitude) minRelativeAltitude = relativeAltitude;
+  float altitudeDrop = (parachuteStatus == "armed") ? armedMaxRelativeAltitude - relativeAltitude : maxRelativeAltitude - relativeAltitude;
+  if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
+  if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
+
+  // --- NEW: Track TriggeredBy column ---
+  static String triggeredBy = "NotTriggered";
+  triggeredBy = "NotTriggered";
+
+  // Print sensor info (unchanged)
   if (debugSerial) {
     Serial.print(getTimeStampString());
-    Serial.print(" BMP280 Temp: ");
-    Serial.print(bmpTemp);
-    Serial.println(" *C");
+    Serial.print(" BMP280 Temp: "); Serial.println(bmpTemp);
     Serial.print(getTimeStampString());
-    Serial.print(" BMP280 Pressure: ");
-    Serial.print(bmp.readPressure() / 100.0F);
-    Serial.println(" hPa");
+    Serial.print(" BMP280 Pressure: "); Serial.println(pressure);
     Serial.print(getTimeStampString());
-    Serial.print(" Absolute Altitude: ");
-    Serial.print(absoluteAltitude);
-    Serial.println(" m");
+    Serial.print(" Absolute Altitude: "); Serial.println(absoluteAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Relative Altitude: ");
-    Serial.print(relativeAltitude);
-    Serial.println(" m");
+    Serial.print(" Relative Altitude: "); Serial.println(relativeAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Altitude Drop: ");
-    Serial.print(altitudeDrop);
-    Serial.println(" m");
+    Serial.print(" Altitude Drop: "); Serial.println(altitudeDrop);
     Serial.print(getTimeStampString());
-    Serial.print(" MPU6050 Temp: ");
-    Serial.print(temp.temperature);
-    Serial.println(" *C");
+    Serial.print(" MPU6050 Temp: "); Serial.println(temp.temperature);
     Serial.print(getTimeStampString());
-    Serial.print(" Accelerometer (rel, corrected): ");
-    Serial.print(relAccX);
-    Serial.print(", ");
-    Serial.print(relAccY);
-    Serial.print(", ");
+    Serial.print(" Accelerometer (raw): ");
+    Serial.print(rawAccX); Serial.print(", ");
+    Serial.print(rawAccY); Serial.print(", ");
+    Serial.println(rawAccZ);
+    Serial.print(getTimeStampString());
+    Serial.print(" Accelerometer (calibrated): ");
+    Serial.print(relAccX); Serial.print(", ");
+    Serial.print(relAccY); Serial.print(", ");
     Serial.println(relAccZ);
     Serial.print(getTimeStampString());
     Serial.print(" Gyroscope (raw): ");
-    Serial.print(g.gyro.x);
-    Serial.print(", ");
-    Serial.print(g.gyro.y);
-    Serial.print(", ");
+    Serial.print(g.gyro.x); Serial.print(", ");
+    Serial.print(g.gyro.y); Serial.print(", ");
     Serial.println(g.gyro.z);
     Serial.print(getTimeStampString());
-    Serial.print(" Local Pressure: ");
-    Serial.print(lastLocalPressure);
-    Serial.println(" hPa");
+    Serial.print(" Local Pressure: "); Serial.println(lastLocalPressure);
     Serial.print(getTimeStampString());
-    Serial.print(" Parachute Status: ");
-    Serial.println(parachuteStatus);
+    Serial.print(" Parachute Status: "); Serial.println(parachuteStatus);
     Serial.print(getTimeStampString());
-    Serial.print(" Max Abs Altitude: ");
-    Serial.print(maxAbsoluteAltitude);
-    Serial.print(" m, Min Abs Altitude: ");
-    Serial.println(minAbsoluteAltitude);
+    Serial.print(" Max Abs Altitude: "); Serial.print(maxAbsoluteAltitude);
+    Serial.print(" m, Min Abs Altitude: "); Serial.println(minAbsoluteAltitude);
     Serial.print(getTimeStampString());
-    Serial.print(" Max Rel Altitude: ");
-    Serial.print(maxRelativeAltitude);
-    Serial.print(" m, Min Rel Altitude: ");
-    Serial.println(minRelativeAltitude);
+    Serial.print(" Max Rel Altitude: "); Serial.print(maxRelativeAltitude);
+    Serial.print(" m, Min Rel Altitude: "); Serial.println(minRelativeAltitude);
+    Serial.print(getTimeStampString());
+    Serial.print(" Thresholds: AltDrop="); Serial.print(altitudeDropThreshold);
+    Serial.print(" AccX="); Serial.print(accXThreshold);
+    Serial.print(" AccY="); Serial.print(accYThreshold);
+    Serial.print(" AccZ="); Serial.print(accZThreshold);
+    Serial.print(" TriggerLogic="); Serial.print(useAndLogic ? "AND" : "OR");
+    Serial.print(" AxisConfig="); Serial.print(axisConfig);
+    Serial.print(" Lat="); Serial.print(currentLatitude, 6);
+    Serial.print(" Lon="); Serial.println(currentLongitude, 6);
+    Serial.print(getTimeStampString());
+    Serial.print(" TriggeredBy: "); Serial.println(triggeredBy);
     Serial.println("--------------------");
   }
 
-  // Log sensor data to SD card en SPIFF
-  char dataString[512];
-  String currentTimestamp = getTimeStampString();
-  snprintf(dataString, sizeof(dataString),
-           "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1013.25,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu\n",
-           currentTimestamp.c_str(),
-           bmpTemp,
-           bmp.readPressure() / 100.0F,
-           absoluteAltitude,
-           relativeAltitude,
-           altitudeDrop,
-           temp.temperature,
-           relAccX,
-           relAccY,
-           relAccZ,
-           g.gyro.x,
-           g.gyro.y,
-           g.gyro.z,
-           parachuteStatus.c_str(),
-           lastLocalPressure,
-           PressureSource.c_str(),
-           maxAbsoluteAltitude,
-           minAbsoluteAltitude,
-           maxRelativeAltitude,
-           minRelativeAltitude,
-           maxAltitudeDrop,
-           minAltitudeDrop,
-           totalSpace,
-           usedSpace,
-           spiffsTotal,
-           spiffsUsed,
-           currentLatitude,
-           currentLongitude);
+  // --- LOG FORMAT (add all extra columns) ---
+  // CSV HEADER suggestion:
+  // Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,
+  // RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,
+  // GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,
+  // Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,
+  // Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,
+  // AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy
 
+  char dataString[700];
+  String currentTimestamp = getTimeStampString();
+
+  snprintf(dataString, sizeof(dataString),
+    "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1013.25,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s\n",
+    currentTimestamp.c_str(),       // Timestamp
+    bmpTemp,                        // BMP Temp
+    pressure,                       // Pressure
+    absoluteAltitude,               // Abs Alt
+    relativeAltitude,               // Rel Alt
+    altitudeDrop,                   // Alt Drop
+    temp.temperature,               // MPU Temp
+    rawAccX, rawAccY, rawAccZ,      // Raw Acc X/Y/Z
+    relAccX, relAccY, relAccZ,      // Calibrated Acc X/Y/Z
+    g.gyro.x, g.gyro.y, g.gyro.z,   // Gyro X/Y/Z
+    parachuteStatus.c_str(),        // Parachute Status
+    lastLocalPressure,              // Local Pressure
+    PressureSource.c_str(),         // API Status
+    maxAbsoluteAltitude, minAbsoluteAltitude,
+    maxRelativeAltitude, minRelativeAltitude,
+    maxAltitudeDrop, minAltitudeDrop,
+    totalSpace, usedSpace,          // SD stats
+    spiffsTotal, spiffsUsed,        // SPIFFS stats
+    currentLatitude, currentLongitude,
+    altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
+    useAndLogic ? "AND" : "OR",     // Trigger logic
+    axisConfig,                     // Axis config
+    triggeredBy.c_str()             // Triggered By
+  );
 
   checkSpiffsSpaceAndWarn();
-  // Only need this once:
   appendFile(SD_MMC, "/log.csv", dataString);
   if ((parachuteStatus == "armed" || parachuteStatus == "released") && spiffsLoggingAllowed) {
     appendFile(SPIFFS, "/log.csv", dataString);
   }
 
-
-  // Check trigger conditions if the system is armed to possibly deploy the parachute
+  // ----------- Check trigger conditions, track TriggeredBy -----------
   if (parachuteStatus == "armed") {
     bool triggerAlt = (altitudeDrop >= altitudeDropThreshold);
     bool triggerAccX, triggerAccY, triggerAccZ;
@@ -2110,23 +2119,45 @@ void loop() {
       triggerAccZ = (relAccZ >= accZThreshold);
     }
 
-    bool triggerCondition = useAndLogic ? (triggerAlt && triggerAccX && triggerAccY && triggerAccZ)
-                                        : (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
+    // Track which trigger is responsible
+    if (triggerAlt) {
+      triggeredBy = "Threshold Altitude Drop";
+    }
+    if (triggerAccX) {
+      if (triggeredBy == "NotTriggered") triggeredBy = "Threshold AccX";
+      else triggeredBy += ",AccX";
+    }
+    if (triggerAccY) {
+      if (triggeredBy == "NotTriggered") triggeredBy = "Threshold AccY";
+      else triggeredBy += ",AccY";
+    }
+    if (triggerAccZ) {
+      if (triggeredBy == "NotTriggered") triggeredBy = "Threshold AccZ";
+      else triggeredBy += ",AccZ";
+    }
+
+    bool triggerCondition = useAndLogic ?
+      (triggerAlt && triggerAccX && triggerAccY && triggerAccZ) :
+      (triggerAlt || triggerAccX || triggerAccY || triggerAccZ);
+
     if (triggerCondition) {
+      // Here you could also, in the future, add timer triggers
+          if (triggerAlt) triggeredBy = "Threshold Altitude Drop";
+    else if (triggerAccX) triggeredBy = "Threshold AccX";
+    else if (triggerAccY) triggeredBy = "Threshold AccY";
+    else if (triggerAccZ) triggeredBy = "Threshold AccZ";
       parachuteRelease();
     }
   }
 
-  // -----------------------
-  // Send sensor data over WebSocket for real-time monitoring
-  // -----------------------
+  // --- WebSocket Output (also includes new fields) ---
   if (sensorModeFlight) {
     static unsigned long previousMillis = 0;
     int interval = 40;
     unsigned long nowMillis = millis();
     if ((nowMillis - previousMillis) > interval) {
       String jsonString = "";
-      StaticJsonDocument<512> doc;
+      StaticJsonDocument<800> doc;
       JsonObject object = doc.to<JsonObject>();
       object["AbsoluteAltitude"] = absoluteAltitude;
       object["RelativeAltitude"] = relativeAltitude;
@@ -2134,20 +2165,18 @@ void loop() {
       object["MaxAltDrop"] = maxAltitudeDrop;
       object["MinAltDrop"] = minAltitudeDrop;
       object["BMP280Temp"] = bmpTemp;
-      object["BMP280Pressure"] = bmp.readPressure() / 100.0F;
+      object["BMP280Pressure"] = pressure;
       object["MPU6050Temp"] = temp.temperature;
+      object["RawAccX"] = rawAccX;
+      object["RawAccY"] = rawAccY;
+      object["RawAccZ"] = rawAccZ;
       object["AccX"] = relAccX;
       object["AccY"] = relAccY;
       object["AccZ"] = relAccZ;
-      {
-        // --- BEGIN MODIFICATION 1 ---
-        // Instead of sending the raw gyroscope values, apply the same axis correction as used in getGyroReadings().
-        float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
-        float corrGx, corrGy, corrGz;
-        correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
-        object["Gyroscope"] = String(corrGx) + "; " + String(corrGy) + "; " + String(corrGz);
-        // --- END MODIFICATION 1 ---
-      }
+      float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
+      float corrGx, corrGy, corrGz;
+      correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
+      object["Gyroscope"] = String(corrGx) + "; " + String(corrGy) + "; " + String(corrGz);
       object["ParachuteStatus"] = parachuteStatus;
       object["LocalPressure"] = lastLocalPressure;
       object["DefaultSeaLevelPressure"] = 1013.25;
@@ -2171,13 +2200,14 @@ void loop() {
       object["Axis Config"] = axisConfig;
       object["SpiffsWarning"] = alreadyWarned;
       object["SensorsCalibrated"] = sensorsCalibrated;
-      object["SensorsCalibWarning"] = !sensorsCalibrated;  // true if warning should show
+      object["SensorsCalibWarning"] = !sensorsCalibrated;
+      object["TriggeredBy"] = triggeredBy;
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
     }
   } else {
-    // In visualization mode, send separate WebSocket messages for each sensor reading
+    // Visualization mode (unchanged)
     if ((millis() - lastTimeGyro) > gyroDelay) {
       String msg = "{\"event\":\"gyro_readings\", \"data\":" + getGyroReadings() + "}";
       webSocket.broadcastTXT(msg);
