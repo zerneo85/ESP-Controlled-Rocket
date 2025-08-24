@@ -7,6 +7,12 @@
 # User specified folders
 /archive
 
+
+# User specified files
+/docs/testplan.xlsx
+/docs/flight_data.xlsm
+
+
 # User-specific files
 *.rsuser
 *.suo

@@ -1,73 +1,231 @@
-/*
-  Rui Santos
-  Complete project details at https://RandomNerdTutorials.com/esp32-mpu-6050-web-server/
-
-  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
-  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
-
-html {
-  font-family: Arial;
-  display: inline-block;
-  text-align: center;
-}
-p {
-  font-size: 1.2rem;
-}
 body {
+  background-color: #EEEEEE;
+  font-family: Arial, sans-serif;
+  color: #003366;
   margin: 0;
+  padding: 0;
 }
-.topnav {
-  overflow: hidden;
+
+h1 {
+  text-align: center;
+  margin-top: 24px;
+  margin-bottom: 10px;
+  font-size: 2.2rem;
+  padding: 0 0 4px 0;
+}
+
+.data-columns {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  flex-wrap: wrap;
+  max-width: 1200px;
+  margin: 0 auto 0 auto;
+}
+
+.data-table {
+  flex: 1 1 0;
+  min-width: 280px;
+  max-width: 340px;
+  background-color: #FFF;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.08);
+  border-collapse: collapse;
+  margin: 0 0 30px 0;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 14px;
+  border: 1px solid #CCC;
+  text-align: left;
+}
+
+.data-table th {
   background-color: #003366;
-  color: #FFD43B;
+  color: #FFF;
+  text-align: left;
   font-size: 1rem;
 }
-.content {
-  padding: 20px;
+
+.data-table tr:nth-child(even) {
+  background-color: #F9F9F9;
 }
-.card {
-  background-color: white;
-  box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
-}
-.card-title {
-  color:#003366;
+
+.data-table-caption {
+  background: #e4eaf2;
   font-weight: bold;
+  text-align: center;
+  font-size: 1.1rem;
+  padding: 5px 0;
+  border-radius: 5px 5px 0 0;
+  letter-spacing: 1px;
 }
-.cards {
-  max-width: 800px;
-  margin: 0 auto;
-  display: grid; grid-gap: 2rem;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-}
-.reading {
-  font-size: 1.2rem;
-}
-.cube-content{
+
+#spiffsWarningBox,
+#calibWarningBox {
   width: 100%;
-  background-color: white;
-  height: 300px; margin: auto;
-  padding-top:2%;
-}
-#reset, #back{
-  border: none;
-  color: #FEFCFB;
-  background-color: #003366;
-  padding: 10px;
+  max-width: 900px;
+  margin: 18px auto 14px auto;
+  color: #fff;
+  font-weight: bold;
   text-align: center;
-  display: inline-block;
-  font-size: 14px; width: 150px;
+  padding: 11px 0;
   border-radius: 4px;
+  font-size: 1rem;
 }
-#resetX, #resetY, #resetZ{
-  border: none;
-  color: #FEFCFB;
+
+#spiffsWarningBox {
+  background: #e53935;
+}
+
+#calibWarningBox {
+  background: #FFA500;
+}
+
+.button-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 auto 18px auto;
+  max-width: 900px;
+}
+
+button {
   background-color: #003366;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  text-align: center;
-  display: inline-block;
-  font-size: 14px;
-  width: 20px;
+  color: #FFF;
+  border: none;
   border-radius: 4px;
+  padding: 10px 18px;
+  font-size: 1rem;
+  margin-bottom: 0;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-width: 110px;
+}
+
+button:hover {
+  background-color: #0055AA;
+}
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  margin: 0 auto 12px auto;
+  max-width: 900px;
+  align-items: center;
+}
+
+.controls-row label,
+.controls-row input,
+.controls-row select,
+.controls-row button {
+  vertical-align: middle;
+}
+
+.controls-row input[type='checkbox'] {
+  transform: translateY(1px);
+}
+
+.controls-row label {
+  margin-right: 2px;
+  font-size: 1rem;
+}
+
+.controls-row input[type='number'],
+.controls-row select {
+  padding: 8px;
+  font-size: 1rem;
+  border-radius: 4px;
+  border: 1px solid #bbb;
+  width: 105px;
+  min-width: 65px;
+  margin-right: 4px;
+  margin-bottom: 2px;
+}
+
+.button-bar-top {
+  margin-bottom: 5px;
+}
+
+.button-bar-bottom {
+  margin-top: 0px;
+}
+
+.controls-row input[type="checkbox"] {
+  margin-left: 8px;
+  margin-right: 3px;
+}
+
+.controls-row label[for="triggerAbs"],
+.controls-row label[for="newAltThreshold"],
+.controls-row label[for="newAccX"],
+.controls-row label[for="newAccY"],
+.controls-row label[for="newAccZ"] {
+  margin-right: 6px;
+  margin-left: 2px;
+}
+
+input.short-number {
+  width: 55px !important;
+  min-width: 30px;
+  max-width: 70px;
+  text-align: left;   /* Zet de tekst naar links */
+  padding-left: 6px;  /* Optioneel: iets meer ruimte links */
+  font-family: monospace;
+}
+
+input.long-number {
+  width: 180px !important;
+  min-width: 160px;
+  max-width: 240px;
+  font-family: monospace;
+}
+
+/* Responsive Design */
+@media (max-width: 1050px) {
+  .data-columns {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .data-columns {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .data-table {
+    margin-bottom: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 1.4rem;
+    margin-top: 18px;
+    margin-bottom: 7px;
+  }
+
+  .data-table {
+    min-width: 98vw;
+    max-width: 98vw;
+    font-size: 0.99em;
+  }
+
+  .button-bar,
+  .controls-row {
+    max-width: 99vw;
+  }
+
+  .controls-row input[type='number'] {
+    width: 75px;
+  }
+
+  .controls-row select {
+    width: 105px;
+  }
 }

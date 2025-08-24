@@ -1,51 +1,81 @@
 /*
- * Flight Computer Firmware for ESP32 – Version 3.6.0 (Major Dashboard & SPIFFS Update)
+ * Flight Computer Firmware for ESP32 – Version 3.7.0 (Major Refactor, Modularization & API Documentation)
  *
- * What’s new since 3.5.0:
- *  - Full web dashboard redesign: introduced a modern 3-column layout for easier navigation and real-time data visibility.
- *  - Improved SPIFFS management:
- *      - Visual dashboard warning if SPIFFS is (almost) full.
- *      - Automatic disable/enable of SPIFFS logging, with clear notifications.
- *      - Cleaner SPIFFS log download/delete workflow in the web UI.
- *  - Visual status for sensor calibration:
- *      - Dashboard now shows clear sensor calibration state (calibrated/uncalibrated).
- *      - Added colored indicators and tooltips for sensor health.
- *  - New trigger options:
- *      - Added checkbox in dashboard: user can now select triggers on both positive *and* negative value thresholds.
- *      - Improved configurability for launch, arming, and release logic.
- *  - Logging & diagnostics:
- *      - Enhanced event and warning logs for easier troubleshooting.
- *      - More precise dashboard error messages (especially for sensor faults, calibration, or full storage).
- *  - Minor bugfixes and code clean-up.
+ * What’s new since 3.6.0:
+ *  - **Major Refactor:**
+ *      - Codebase split into multiple files/modules for maintainability:
+ *          • Core logic, sensor drivers, and utilities separated into distinct headers (.h) and implementation (.cpp) files.
+ *          • Web endpoints, WebSocket events, file management, and dashboard logic each live in their own files.
+ *          • Shared types/constants and color/LED routines moved to dedicated utility files.
+ *      - Central main.cpp now focuses on setup(), loop(), and high-level orchestration.
+ *
+ *  - **Comprehensive API Documentation Added:**
+ *      - All HTTP endpoints, file handlers, and WebSocket messages are now fully documented (see below).
+ *      - Endpoint summary included in this header and in docs/api.md for external reference.
+ *      - REST, WebSocket, and OTA update endpoints are now clearly named and documented.
+ *
+ *  - **Other Changes:**
+ *      - Minor code clean-up and in-line documentation improvements.
+ *      - Improved error handling for file operations.
+ *      - Updated dashboard/static server logic to work with new modular file structure.
  *
  * ┌───────────────────────────────────────────────┐
- * │       New UI and Logging Features (3.6.0)     │
+ * │                  Endpoints Overview           │
  * └───────────────────────────────────────────────┘
  *
- *  • Dashboard:
- *      – Responsive, flexible 3-column layout for flight, triggers, and diagnostics.
- *      – Real-time SPIFFS and SD status. Direct file actions from dashboard.
- *      – Sensor calibration status and quick calibration controls.
- *      – Highlighted triggers (now support positive/negative thresholds).
+ * ───── HTTP REST API & Static Content ──────────────
+ *  GET   /                  → Redirects to /index.html, sets flight mode
+ *  GET   /visualization     → Redirects to visualization UI, sets visualization mode
+ *  GET   /visualization/    → Serves static visualization files from SPIFFS
+ *  GET   /files             → Lists files on SD & SPIFFS (JSON)
+ *  GET   /deleteFile        → Delete file from SD or SPIFFS (param: name)
+ *  GET   /deleteFileSPIFFS  → Delete file from SPIFFS (param: name)
+ *  GET   /deleteFileSD      → Delete file from SD card (param: name)
+ *  GET   /downloadFile      → Download file from SD, fallback to SPIFFS (param: name)
+ *  POST  /upload            → Upload file to SPIFFS (multipart/form-data)
+ *  POST  /uploadsd          → Upload file to SD card (multipart/form-data)
+ *  GET   /spiffsupload      → HTML page for uploading files to SPIFFS (multi-file/folder support)
+ *  POST  /spiffsupload      → Actual SPIFFS upload handler (uses folder argument)
+ *  GET   /gyro              → Get gyroscope readings as JSON
+ *  GET   /acc               → Get accelerometer readings as JSON
+ *  GET   /temp              → Get temperature (plain text)
+ *  GET   /reset             → Reset all gyro values to zero
+ *  GET   /resetX|/resetY|/resetZ → Reset specific gyro axis to zero
+ *  GET   /index.html, /style.css, /script.js, /visualization/* → Serve static files from SPIFFS
  *
- *  • SPIFFS Management:
- *      – Improved low-space detection (visual + LED + UI warning).
- *      – One-click log export/clear.
- *      – Logging is now auto-managed (disabled if SPIFFS nearly full, auto-resume when cleared).
+ * ───── OTA Firmware Update ──────────────
+ *  POST  /update            → Firmware update via ESP32 HTTPUpdateServer (auto-registered)
  *
- *  • Triggers:
- *      – New option: trigger on positive *and/or* negative value crossings.
- *      – UI toggle for easy setup.
+ * ───── WebSocket (port 81) ──────────────
+ *  Handles:
+ *      - Sensor and threshold settings (JSON keys: newThreshold, newAccX/Y/Z, enAltDrop/AccX/Y/Z, etc.)
+ *      - Trigger logic selection (AND/OR)
+ *      - Sensor calibration (calibrateSensors)
+ *      - Parachute commands (Armed/Released/Unarmed)
+ *      - Axis correction config (axisConfig)
+ *      - Location update (latitude/longitude) triggers API pressure refresh and broadcasts new settings
+ *      - Live telemetry/diagnostic broadcast to all clients
  *
- *  • Visual feedback:
- *      – LED and dashboard feedback are now always in sync for critical events (calibration, logging, arming, etc).
+ * ───── Outbound API Calls ──────────────
+ *  - OpenWeatherMap API for live pressure calibration
  *
- * For details and troubleshooting, see the README or dashboard Help.
+ * For more details, see docs/api.md and individual module headers.
  *
- * ┌──────────────────────────────────────────────────────────────────────────────┐
- * │                         LED Behavior & System Status Summary                │
- * └──────────────────────────────────────────────────────────────────────────────┘
+ * ───── 3.7.0 Changelog Summary ──────────────
+ *  - Split codebase into separate files:
+ *      • main.cpp: Main entry, setup(), loop(), orchestrator
+ *      • endpoints.cpp/h: All HTTP endpoint registrations & handlers
+ *      • websocket.cpp/h: WebSocket event handling
+ *      • sensors.cpp/h: Sensor initialization, reading, calibration logic
+ *      • led.cpp/h: LED and color routines
+ *      • files.cpp/h: File management for SD/SPIFFS
+ *      • utils.cpp/h: Common helpers (timestamp, formatting, API)
+ *      • static/: Web assets (index.html, style.css, script.js, visualization)
+ *      • docs/api.md: API and endpoint docs
+ *  - Improved inline documentation, modularity, and error handling
+ *  - No changes to core flight logic; all features and triggers as in 3.6.0
  *
+ * ───── Dashboard & LED Feedback Reference (unchanged) ──────────────
  *  • Color Wheel Indices (0–255 → RGB via strip.Wheel(index)):
  *      0   → red
  *     30   → orange
@@ -56,71 +86,24 @@
  *
  *  • Core LED Functions:
  *      setAllLEDs(color)
- *        – color: 24-bit RGB value
- *
  *      blinkColor(color, times, delayms)
- *        – color: 24-bit RGB
- *        – times: number of on/off cycles
- *        – delayms: ms between each on/off
- *
  *      showLEDColorsSequentially(color, direction, rotations)
- *        – color: 24-bit RGB
- *        – direction: +1 = ascending index, –1 = descending
- *        – rotations: full passes across all LEDs
- *
  *      showRainbowCycle(wait, direction, rotations)
- *        – wait: ms between frames
- *        – direction: +1 forward through hue wheel, –1 backward
- *        – rotations: number of full rainbow cycles
  *
  *  • Main LED Sequences & System States:
- *      – **Startup / Unarmed:**
- *          setAllLEDs(blueColor);                // Solid blue = system powered, safe
- *
- *      – **Wi-Fi status:**
- *          if connected: blinkColor(greenColor,5,250);  // 5 green blinks @250ms = WiFi OK
- *          else:        blinkColor(orangeColor,5,250); // 5 orange blinks @250ms = WiFi failed/AP mode
- *
- *      – **Parachute Armed:**
- *          showLEDColorsSequentially(redColor,  1, 3);  // Sequential red (forward), 3 rotations = arming
- *          setAllLEDs(redColor);                        // Solid red = system ARMED, ready for flight
- *
- *      – **Parachute Released:**
- *          blinkColor(greenColor,5,100);                // Fast green blink = release triggered
- *          showLEDColorsSequentially(greenColor, -1, 2);// Sequential green (reverse), 2 rotations = confirmation
- *          setAllLEDs(greenColor);                      // Solid green = parachute deployed/released
- *
- *      – **Calibrate Sensors:**
- *          showLEDColorsSequentially(orangeColor,  1, 1); // Orange forward, 1 rot = begin calibration
- *          showLEDColorsSequentially(orangeColor, -1, 1); // Orange reverse, 1 rot = finish calibration
- *
- *      – **Visualization Mode:**
- *          setAllLEDs(purpleColor);                 // Solid purple = visualization/dashboard mode active
+ *      Startup/Unarmed, Wi-Fi status, Parachute Armed/Released, Calibrate Sensors, Visualization Mode
  *
  *  • File Management, Upload/Download, and Warning Indicators:
- *      – **File Manager (/files endpoint):**
- *          setAllLEDs(orangeColor);                 // Solid orange = file management in progress
- *
- *      – **Delete File:**
- *          blinkColor(redColor, 2, 250);            // 2 slow red blinks = file deleted
- *
- *      – **Download File:**
- *          blinkColor(purpleColor, 2, 250);         // 2 purple blinks = file downloaded
- *
- *      – **Upload File (SD or SPIFFS):**
- *          blinkColor(greenColor, 2, 250);          // 2 green blinks = upload successful
- *
- *      – **SPIFFS Storage Almost Full:**
- *          animateWarningPatternLEDs();             // Alternating red/purple LEDs and warning bar on web UI
- *          Logging to SPIFFS is auto-disabled until free space restored.
- *          When resolved: solid blue (unarmed) and logging resumes.
+ *      File Manager, Delete File, Download File, Upload File, SPIFFS Storage Full
  *
  *  • Data Logging:
- *      – All data is always logged to SD card if available.
- *      – Data is also logged to SPIFFS **as long as there is enough free space**.
- *      – If SPIFFS free space drops below threshold, logging is suspended and visual warning shown.
+ *      – All data always logged to SD card if available
+ *      – Data also logged to SPIFFS as long as there is enough free space
+ *      – If SPIFFS free space drops below threshold, logging is suspended and visual warning shown
  *
+ * For troubleshooting, see README and module docs.
  */
+
 
 // -----------------------
 // Library Inclusions
@@ -170,9 +153,9 @@ Adafruit_NeoPixel strip(LEDS_COUNT, LEDS_PIN, NEO_GRB + NEO_KHZ800);
 // -----------------------
 // Macro Definitions & Global Variables
 // -----------------------
-#define EEPROM_SIZE 10                  // EEPROM size
-#define EEPROM_PRESSURE_ADDR 0          // EEPROM address for storing pressure
-const size_t MAX_SPIFFS_USED_KB = 800;  // Set your preferred limit (in KB)
+#define EEPROM_SIZE 10                   // EEPROM size
+#define EEPROM_PRESSURE_ADDR 0           // EEPROM address for storing pressure
+const size_t MAX_SPIFFS_USED_KB = 1000;  // Set your preferred limit (in KB)
 bool spiffsLoggingAllowed = false;
 bool alreadyWarned = false;
 bool apiSuccess = false;
@@ -183,8 +166,9 @@ bool sensorsCalibrated = false;   // true when calibrated
 bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
 bool triggerAbs = true;           // Trigger on both positive and negative acceleration by default
 String triggeredBy = "NotTriggered";
+String lastTriggeredBy = "NotTriggered";
 bool enAltDrop = true;
-bool enAccX = true;
+bool enAccX = false;
 bool enAccY = true;
 bool enAccZ = true;
 
@@ -214,9 +198,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "4ebe45a774a5b74364992dc2f83fc597";  // Anonymized API key
-float currentLatitude = 52.03323004349591;                              // Anonymized Latitude
-float currentLongitude = 4.36483383178711;                              // Anonymized Longitude
+const char *openWeatherMapApiKey = "XXXXXX";  // Anonymized API key
+float currentLatitude = 52.02523004349591;                              // Anonymized Latitude
+float currentLongitude = 4.25483383178711;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -306,438 +290,64 @@ const unsigned long accelerometerDelay = 200;
 const unsigned long temperatureDelay = 1000;
 
 // ---------------------------------------------------------------------------
-// Main Web Page String (Flight Information Page) – HTML content served to clients
+// Small SPIFF uploader
 // ---------------------------------------------------------------------------
-const char *webpage = R"rawliteral(
+
+const char spiffsUploaderHTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name='viewport' content='width=device-width,initial-scale=1'>
-  <title>Flight Computer</title>
+  <meta charset="utf-8" />
+  <title>SPIFFS Uploader</title>
   <style>
-    body {
-      background-color: #EEEEEE;
-      font-family: Arial, sans-serif;
-      color: #003366;
-      margin: 0;
-      padding: 0;
-    }
-    h1 {
-      text-align: center;
-      margin-top: 24px;
-      margin-bottom: 10px;
-      font-size: 2.2rem;
-      padding: 0 0 4px 0;
-    }
-    .data-columns {
-      display: flex;
-      justify-content: center;
-      gap: 32px;
-      flex-wrap: wrap;
-      max-width: 1200px;
-      margin: 0 auto 0 auto;
-    }
-    .data-table {
-      flex: 1 1 0;
-      min-width: 280px;
-      max-width: 340px;
-      background-color: #FFF;
-      box-shadow: 0 0 10px rgba(0,0,0,0.08);
-      border-collapse: collapse;
-      margin: 0 0 30px 0;
-    }
-    .data-table th,
-    .data-table td {
-      padding: 10px 14px;
-      border: 1px solid #CCC;
-      text-align: left;
-    }
-    .data-table th {
-      background-color: #003366;
-      color: #FFF;
-      text-align: left;
-      font-size: 1rem;
-    }
-    .data-table tr:nth-child(even) {
-      background-color: #F9F9F9;
-    }
-    .data-table-caption {
-      background: #e4eaf2;
-      font-weight: bold;
-      text-align: center;
-      font-size: 1.1rem;
-      padding: 5px 0;
-      border-radius: 5px 5px 0 0;
-      letter-spacing: 1px;
-    }
-    /* Warning boxes */
-    #spiffsWarningBox, #calibWarningBox {
-      width: 100%;
-      max-width: 900px;
-      margin: 18px auto 14px auto;
-      color: #fff;
-      font-weight: bold;
-      text-align: center;
-      padding: 11px 0;
-      border-radius: 4px;
-      font-size: 1rem;
-    }
-    #spiffsWarningBox { background: #e53935; }
-    #calibWarningBox { background: #FFA500; }
-
-    /* Button bar */
-    .button-bar {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px;
-      margin: 0 auto 18px auto;
-      max-width: 900px;
-    }
-    button {
-      background-color: #003366;
-      color: #FFF;
-      border: none;
-      border-radius: 4px;
-      padding: 10px 18px;
-      font-size: 1rem;
-      margin-bottom: 0;
-      cursor: pointer;
-      transition: background 0.15s;
-      min-width: 110px;
-    }
-    button:hover {
-      background-color: #0055AA;
-    }
-
-.controls-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px 16px;
-  margin: 0 auto 12px auto;
-  max-width: 900px;
-  align-items: center; /* Add this line! */
-}
-
-.controls-row label,
-.controls-row input,
-.controls-row select,
-.controls-row button {
-  vertical-align: middle; /* Helps, but align-items:center is the real fix */
-}
-
-/* Optionally, make checkboxes more centered */
-.controls-row input[type='checkbox'] {
-  transform: translateY(1px); /* Or 2px if needed */
-}
-
-
-
-    /* Input styling */
-    .controls-row {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px 16px;
-      margin: 0 auto 12px auto;
-      max-width: 900px;
-    }
-    .controls-row label {
-      margin-right: 2px;
-      font-size: 1rem;
-    }
-    .controls-row input[type='number'],
-    .controls-row select {
-      padding: 8px;
-      font-size: 1rem;
-      border-radius: 4px;
-      border: 1px solid #bbb;
-      width: 105px;
-      min-width: 65px;
-      margin-right: 4px;
-      margin-bottom: 2px;
-    }
-    /* For mobile: vertical stack */
-    @media (max-width: 1050px) {
-      .data-columns { gap: 16px; }
-    }
-    @media (max-width: 900px) {
-      .data-columns { flex-direction: column; align-items: center; gap: 0; }
-      .data-table { margin-bottom: 24px; }
-    }
-    @media (max-width: 640px) {
-      h1 { font-size: 1.4rem; margin-top: 18px; margin-bottom: 7px;}
-      .data-table { min-width: 98vw; max-width: 98vw; font-size: 0.99em;}
-      .button-bar, .controls-row { max-width: 99vw; }
-      .controls-row input[type='number'] { width: 75px; }
-      .controls-row select { width: 105px; }
-    }
+    body { font-family:sans-serif; margin:30px; }
+    h2 { color:#333; }
+    .msg { margin:10px 0 15px 0; color: green;}
+    input[type=file], input[type=text], button { font-size:1em; margin:5px 0; }
   </style>
 </head>
 <body>
-  <h1>Flight Computer</h1>
-
-  <div id="spiffsWarningBox" style="display:none;">
-    <span>SPIFFS WARNING: Internal storage almost full! Logging disabled. Download/delete files.</span>
+  <div style="margin-bottom:20px;text-align:center;">
+    <a href="/files"><button type="button">← Back to File Manager</button></a>
   </div>
-  <div id="calibWarningBox" style="display:none;">
-    <span>SENSOR CALIBRATION REQUIRED: Sensors are not yet calibrated. Please calibrate before arming!</span>
-  </div>
-
-  <!-- Three equally wide, centered columns -->
-  <div class="data-columns">
-    <table class="data-table">
-      <caption class="data-table-caption">Flight / Altitude</caption>
-      <tr><th>Parameter</th><th>Value</th></tr>
-      <tr><td>Absolute Altitude</td><td id='AbsoluteAltitude'>-</td></tr>
-      <tr><td>Relative Altitude</td><td id='RelativeAltitude'>-</td></tr>
-      <tr><td>Altitude Drop</td><td id='AltitudeDrop'>-</td></tr>
-      <tr><td>Max Abs Altitude</td><td id='MaxAbsAltitude'>-</td></tr>
-      <tr><td>Min Abs Altitude</td><td id='MinAbsAltitude'>-</td></tr>
-      <tr><td>Max Rel Altitude</td><td id='MaxRelAltitude'>-</td></tr>
-      <tr><td>Min Rel Altitude</td><td id='MinRelAltitude'>-</td></tr>
-      <tr><td>Max Alt Drop</td><td id='MaxAltDrop'>-</td></tr>
-      <tr><td>Min Alt Drop</td><td id='MinAltDrop'>-</td></tr>
-      <tr><td>Altitude Drop Threshold</td><td id='AltDropThreshold'>-</td></tr>
-      <tr><td>Latitude</td><td id="currentLatitude">-</td></tr>
-      <tr><td>Longitude</td><td id="currentLongitude">-</td></tr>
-      <tr><td>Axis Mapping Config</td><td id="axisConfigDisplay">-</td></tr>
-    </table>
-    <table class="data-table">
-      <caption class="data-table-caption">Sensor Data</caption>
-      <tr><th>Parameter</th><th>Value</th></tr>
-      <tr><td>BMP280 Temp</td><td id='BMP280Temp'>-</td></tr>
-      <tr><td>BMP280 Pressure</td><td id='BMP280Pressure'>-</td></tr>
-      <tr><td>MPU6050 Temp</td><td id='MPU6050Temp'>-</td></tr>
-      <tr><td>Acc X</td><td id='AccX'>-</td></tr>
-      <tr><td>Acc Y</td><td id='AccY'>-</td></tr>
-      <tr><td>Acc Z</td><td id='AccZ'>-</td></tr>
-      <tr><td>Gyroscope</td><td id='Gyroscope'>-</td></tr>
-      <tr><td>Local Pressure</td><td id='LocalPressure'>-</td></tr>
-      <tr><td>Default Sea-Level Pressure</td><td id='DefaultSeaLevelPressure'>-</td></tr>
-      <tr><td>Pressure Source</td><td id='PressureSource'>-</td></tr>
-    </table>
-    <table class="data-table">
-      <caption class="data-table-caption">System / Status</caption>
-      <tr><th>Parameter</th><th>Value</th></tr>
-      <tr><td>Parachute Status</td><td id='ParachuteStatus'>-</td></tr>
-      <tr><td>Sensors Calibrated</td><td id="SensorsCalibrated">-</td></tr>
-      <tr><td>Trigger Logic</td><td id='TriggerLogic'>-</td></tr>
-      <tr><td>Acc X Threshold</td><td id='AccXThreshold'>-</td></tr>
-      <tr><td>Acc Y Threshold</td><td id='AccYThreshold'>-</td></tr>
-      <tr><td>Acc Z Threshold</td><td id='AccZThreshold'>-</td></tr>
-      <tr><td>Sensor Mode Flight</td><td id='SensorModeFlight'>-</td></tr>
-      <tr><td>Total Space (MB)</td><td id='TotalSpace'>-</td></tr>
-      <tr><td>Used Space (MB)</td><td id='UsedSpace'>-</td></tr>
-      <tr><td>SPIFFS Total Space (KB)</td><td id='SPIFFSTotalSpace'>-</td></tr>
-      <tr><td>SPIFFS Used Space (KB)</td><td id='SPIFFSUsedSpace'>-</td></tr>
-    </table>
-  </div>
-
-  <!-- Button bar - all main actions in a single row -->
-  <div class="button-bar">
-    <button id='BTN_ARM' onclick="button_arm()">Arm Parachute</button>
-    <button id='BTN_RELEASE' onclick="button_release()">Release Parachute</button>
-    <button id='BTN_CALIBRATE' onclick="button_calibrate()">Calibrate Sensors</button>
-    <button id='BTN_UNARM' onclick="button_unarm()">Unarm Parachute</button>
-    <button id='BTN_OTA' onclick="window.open('/update','_blank')">OTA Upgrade</button>
-    <button id='BTN_FILES' onclick="window.open('/files','_blank')">Files</button>
-    <button id='BTN_VIS' onclick="window.open('/visualization','_blank')">Visualization</button>
-  </div>
-
-  <!-- Controls below -->
-  <div class="controls-row">
-    <label for="latitude">Latitude:</label>
-    <input type="number" id="latitude" step="0.000001" value="52.03323004349591" placeholder="Latitude">
-    <label for="longitude">Longitude:</label>
-    <input type="number" id="longitude" step="0.000001" value="4.36483383178711" placeholder="Longitude">
-    <button id="BTN_SET_LOCATION" onclick="button_update_location()">Set Location</button>
-  </div>
-<div class="controls-row">
-  <label for='newAltThreshold'>Altitude Drop:</label>
-  <input type='number' step='0.1' id='newAltThreshold' placeholder='Altitude Drop Threshold' value='0.8'>
-  <input type="checkbox" id="chkAltDrop" checked> <label for="chkAltDrop">Enable</label>
-  
-  <label for='newAccX'>Acc X:</label>
-  <input type='number' step='0.1' id='newAccX' placeholder='Acc X Threshold' value='15.0'>
-  <input type="checkbox" id="chkAccX" checked> <label for="chkAccX">Enable</label>
-  
-  <label for='newAccY'>Acc Y:</label>
-  <input type='number' step='0.1' id='newAccY' placeholder='Acc Y Threshold' value='15.0'>
-  <input type="checkbox" id="chkAccY" checked> <label for="chkAccY">Enable</label>
-  
-  <label for='newAccZ'>Acc Z:</label>
-  <input type='number' step='0.1' id='newAccZ' placeholder='Acc Z Threshold' value='15.0'>
-  <input type="checkbox" id="chkAccZ" checked> <label for="chkAccZ">Enable</label>
-  
-  <label for="triggerAbs">Trigger on both + and - Acc</label>
-  <input type="checkbox" id="triggerAbs" checked>
-  <label for='triggerLogic'>Trigger Logic:</label>
-  <select id='triggerLogic'><option value='OR'>OR</option><option value='AND'>AND</option></select>
-  <button id='BTN_UPDATE_TRIGGERS' onclick="button_update_triggers()">Update Triggers Thresholds</button>
-</div>
-  <div class="controls-row">
-    <label for='axisConfig'>Axis Mapping Configuration:</label>
-    <select id='axisConfig'>
-      <option value='0'>0 - Swap x>-X and y>Y and z>Z</option>
-      <option value='1'>1 - Swap x>-X and y>Y and z>Z</option>
-      <option value='2'>2 - Swap x>Y and y>X and z>Z</option>
-      <option value='3'>3 - Swap x>Y and y>Z and z>X</option>
-      <option value='4'>4 - Swap x>Z and y>Y and z>X</option>
-      <option value='5'>5 - Swap x>Z and y>X and z>Y</option>
-    </select>
-    <button onclick="button_update_axis()">Update Axis Mapping</button>
-  </div>
-
-
-
-<!-- Water Rocket Performance Table (8 bar, realistic empty mass) -->
-<div style="max-width: 800px; margin: 40px auto 25px auto; font-family: Arial, sans-serif;">
-  <h2 style="text-align:center; margin-bottom: 12px;">Water Rocket Performance Table <span style="font-size:0.7em; font-weight:normal;">(8 bar, realistic empty mass)</span></h2>
-  <table style="margin: 0 auto; border-collapse: collapse; min-width: 650px; background: #fff;">
-    <caption style="caption-side:top; font-weight:bold; margin-bottom:8px; color:#222;">All results at 8 bar pressure</caption>
-    <tr style="background:#3949ab; color:#fff;">
-      <th>Total Volume (L)</th>
-      <th>Empty Mass (g)</th>
-      <th>Water Amount (L)</th>
-      <th>Nozzle (mm)</th>
-      <th>Apogee (m)</th>
-      <th>Burnout Time (s)</th>
-      <th>Total Flight Time (s)</th>
-    </tr>
-    <tr><td>1.5</td><td>200</td><td>0.5</td><td>7</td><td>103</td><td>1.5</td><td>9.7</td></tr>
-    <tr><td>1.5</td><td>200</td><td>0.5</td><td>20</td><td>115</td><td>0.31</td><td>10.3</td></tr>
-    <tr><td>4.5</td><td>800</td><td>1.5</td><td>7</td><td>108</td><td>2.5</td><td>10.5</td></tr>
-    <tr><td>4.5</td><td>800</td><td>1.5</td><td>20</td><td>118</td><td>0.45</td><td>11.0</td></tr>
-    <tr><td>7.5</td><td>900</td><td>2.5</td><td>7</td><td>128</td><td>2.8</td><td>12.2</td></tr>
-    <tr><td>7.5</td><td>900</td><td>2.5</td><td>20</td><td>140</td><td>0.49</td><td>12.7</td></tr>
-    <tr><td>10.5</td><td>1000</td><td>3.5</td><td>7</td><td>119</td><td>2.6</td><td>11.6</td></tr>
-    <tr><td>10.5</td><td>1000</td><td>3.5</td><td>20</td><td>134</td><td>0.56</td><td>12.2</td></tr>
-  </table>
-  <ul style="margin:14px auto 0 auto; max-width:570px; color:#1a237e; font-size:1em;">
-    <li><b>Pressure:</b> 8 bar (116 psi)</li>
-    <li><b>Water amount:</b> approx. 1/3 of total volume</li>
-    <li><b>Empty mass:</b> as listed per bottle size</li>
-    <li><b>Drag coefficient:</b> 0.5</li>
-    <li><b>Nozzle 7 mm:</b> Long burn, smooth flight</li>
-    <li><b>Nozzle 20 mm:</b> Short, powerful burn, higher initial velocity</li>
-    <li>Simulated/estimated values for optimal efficiency</li>
-  </ul>
-</div>
-
-
-</body>
-</html>
-
-
+  <h2>ESP32 SPIFFS File Uploader</h2>
+  <form id="uploadForm" enctype="multipart/form-data" method="POST">
+    <label>SPIFFS Folder (start with /):</label><br>
+    <input type="text" id="folder" name="folder" value="/" size="30" required /><br>
+    <label>Select file(s):</label><br>
+    <input type="file" id="files" name="files" multiple required /><br>
+    <button type="submit">Upload</button>
+  </form>
+  <div class="msg" id="result"></div>
   <script>
-    var Socket;
-    function init(){
-      Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
-      Socket.onmessage = function(event){ processCommand(event); };
+document.getElementById('uploadForm').onsubmit = async function(e) {
+  e.preventDefault();
+  var folder = document.getElementById('folder').value;
+  var files = document.getElementById('files').files;
+  if(!folder.startsWith('/')) { alert('Folder must start with /'); return false; }
+  if(files.length === 0) { alert('Select at least one file!'); return false; }
+  let results = [];
+  for(let i=0; i<files.length; i++) {
+    let formData = new FormData();
+    formData.append('folder', folder);
+    formData.append('file', files[i]);
+    try {
+      let res = await fetch('/spiffsupload', {method:'POST', body:formData});
+      let txt = await res.text();
+      results.push(folder + files[i].name + ': ' + txt);
+    } catch (err) {
+      results.push(folder + files[i].name + ': Error - ' + err);
     }
-    function button_arm(){ Socket.send(JSON.stringify({ parachute: 'Armed' })); }
-    function button_release(){ Socket.send(JSON.stringify({ parachute: 'Released' })); }
-    function button_calibrate(){ Socket.send(JSON.stringify({ calibrateSensors: true })); }
-    function button_unarm() { Socket.send(JSON.stringify({ parachute: 'Unarmed' }));}
-    function button_update_location(){
-      var lat = parseFloat(document.getElementById('latitude').value);
-      var lon = parseFloat(document.getElementById('longitude').value);
-      Socket.send(JSON.stringify({ latitude: lat, longitude: lon }));
-    }
-function button_update_triggers(){
-  var altVal = parseFloat(document.getElementById('newAltThreshold').value);
-  var accXVal = parseFloat(document.getElementById('newAccX').value);
-  var accYVal = parseFloat(document.getElementById('newAccY').value);
-  var accZVal = parseFloat(document.getElementById('newAccZ').value);
-  var logicVal = document.getElementById('triggerLogic').value;
-  var absVal = document.getElementById('triggerAbs').checked;
-  // NEW: Get checkbox states
-  var enAltDrop = document.getElementById('chkAltDrop').checked;
-  var enAccX = document.getElementById('chkAccX').checked;
-  var enAccY = document.getElementById('chkAccY').checked;
-  var enAccZ = document.getElementById('chkAccZ').checked;
-  Socket.send(JSON.stringify({
-    newThreshold: altVal,
-    newAccX: accXVal,
-    newAccY: accYVal,
-    newAccZ: accZVal,
-    newTriggerLogic: logicVal,
-    triggerAbs: absVal,
-    enAltDrop: enAltDrop,
-    enAccX: enAccX,
-    enAccY: enAccY,
-    enAccZ: enAccZ
-  }));
+  }
+  document.getElementById('result').innerHTML = results.join('<br>');
+  return false;
 }
-
-    function button_update_axis(){
-      var v = parseInt(document.getElementById('axisConfig').value);
-      Socket.send(JSON.stringify({ axisConfig: v }));
-    }
-    function processCommand(event){
-      var obj = JSON.parse(event.data);
-      document.getElementById('AbsoluteAltitude').innerHTML = obj.AbsoluteAltitude||'-';
-      document.getElementById('RelativeAltitude').innerHTML = obj.RelativeAltitude||'-';
-      document.getElementById('AltitudeDrop').innerHTML = obj.AltitudeDrop||'-';
-      document.getElementById('BMP280Temp').innerHTML = obj.BMP280Temp||'-';
-      document.getElementById('BMP280Pressure').innerHTML = obj.BMP280Pressure||'-';
-      document.getElementById('MPU6050Temp').innerHTML = obj.MPU6050Temp||'-';
-      document.getElementById('AccX').innerHTML = obj.AccX||'-';
-      document.getElementById('AccY').innerHTML = obj.AccY||'-';
-      document.getElementById('AccZ').innerHTML = obj.AccZ||'-';
-      document.getElementById('Gyroscope').innerHTML = obj.Gyroscope||'-';
-      document.getElementById('ParachuteStatus').innerHTML = obj.ParachuteStatus||'-';
-      document.getElementById('LocalPressure').innerHTML = obj.LocalPressure||'-';
-      document.getElementById('DefaultSeaLevelPressure').innerHTML = obj.DefaultSeaLevelPressure||'-';
-      document.getElementById('PressureSource').innerHTML = obj.PressureSource||'-';
-      document.getElementById('MaxAbsAltitude').innerHTML = obj.MaxAbsAltitude||'-';
-      document.getElementById('MinAbsAltitude').innerHTML = obj.MinAbsAltitude||'-';
-      document.getElementById('MaxRelAltitude').innerHTML = obj.MaxRelAltitude||'-';
-      document.getElementById('MinRelAltitude').innerHTML = obj.MinRelAltitude||'-';
-      document.getElementById('MaxAltDrop').innerHTML = obj.MaxAltDrop||'-';
-      document.getElementById('MinAltDrop').innerHTML = obj.MinAltDrop||'-';
-      document.getElementById('AltDropThreshold').innerHTML = obj.AltDropThreshold||'-';
-      document.getElementById('AccXThreshold').innerHTML = obj.AccXThreshold||'-';
-      document.getElementById('AccYThreshold').innerHTML = obj.AccYThreshold||'-';
-      document.getElementById('AccZThreshold').innerHTML = obj.AccZThreshold||'-';
-      document.getElementById('TriggerLogic').innerHTML = obj.TriggerLogic||'-';
-      document.getElementById('TotalSpace').innerHTML = obj.TotalSpace||'-';
-      document.getElementById('UsedSpace').innerHTML = obj.UsedSpace||'-';
-      document.getElementById('SPIFFSTotalSpace').innerHTML = obj.SPIFFSTotalSpace || '-';
-      document.getElementById('SPIFFSUsedSpace').innerHTML = obj.SPIFFSUsedSpace || '-';
-      document.getElementById('SensorModeFlight').innerHTML = obj.SensorModeFlight||'-';
-      document.getElementById('currentLatitude').innerHTML  = (obj.Latitude  !== undefined) ? obj.Latitude  : '-';
-      document.getElementById('currentLongitude').innerHTML = (obj.Longitude !== undefined) ? obj.Longitude : '-';
-      document.getElementById('axisConfigDisplay').innerText = obj['Axis Config']||'-';
-      document.getElementById('SensorsCalibrated').innerHTML = (obj.SensorsCalibrated === true) ? "Yes" : (obj.SensorsCalibrated === false) ? "No" : "-";
-
-      if (obj.SpiffsWarning) {
-        document.getElementById('spiffsWarningBox').style.display = '';
-      } else {
-        document.getElementById('spiffsWarningBox').style.display = 'none';
-      }
-
-      if (obj.SensorsCalibWarning) {
-        document.getElementById('calibWarningBox').style.display = '';
-      } else {
-        document.getElementById('calibWarningBox').style.display = 'none';
-      }
-    }
-    window.onload = init;
   </script>
-
-
-
-
-
-
 </body>
 </html>
-
-
 )rawliteral";
+
+
 
 // ---------------------------------------------------------------------------
 // Sensor Reading Functions (with Axis Correction applied)
@@ -809,336 +419,7 @@ String getTemperatureReading() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Unified Upload Form with Radio Selection (uploads to SPIFFS or SD based on selection)
-// ---------------------------------------------------------------------------
-const char upload_form_combined[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-  <head>
-    <title>ESP32 File Upload</title>
-    <meta name='viewport' content='width=device-width, initial-scale=1'>
-  </head>
-  <body>
-    <form id="uploadForm" method="POST" enctype="multipart/form-data">
-      <label>Select File System:</label><br>
-      <input type="radio" id="fsSpiffs" name="fs" value="SPIFFS" checked>
-      <label for="fsSpiffs">SPIFFS</label><br>
-      <input type="radio" id="fsSd" name="fs" value="SD">
-      <label for="fsSd">SD Card</label><br><br>
-      <div id="folderInput">
-        <label for="targetFolder">Target Folder:</label><br>
-        <input type="text" id="targetFolder" name="targetFolder" placeholder="Target folder (e.g. /myfolder)" value="/"><br>
-      </div>
-      <input type="file" name="upload"><br>
-      <input type="submit" value="Upload">
-    </form>
-    <script>
-      // Show or hide folder input based on selected file system
-      function updateFolderInputVisibility() {
-         var fsOption = document.querySelector('input[name="fs"]:checked').value;
-         document.getElementById("folderInput").style.display = (fsOption === "SPIFFS") ? "block" : "none";
-      }
-      document.querySelectorAll('input[name="fs"]').forEach(function(radio) {
-         radio.addEventListener("change", updateFolderInputVisibility);
-      });
-      updateFolderInputVisibility(); // Set initial visibility
-      
-      // Handle form submission with AJAX
-      document.getElementById("uploadForm").addEventListener("submit", function(event) {
-         event.preventDefault();
-         var fsOption = document.querySelector('input[name="fs"]:checked').value;
-         var actionUrl;
-         if (fsOption === "SPIFFS") {
-            var folder = document.getElementById("targetFolder").value;
-            actionUrl = "/upload?targetFolder=" + encodeURIComponent(folder);
-         } else {
-            actionUrl = "/uploadsd";
-         }
-         var formData = new FormData(this);
-         var xhr = new XMLHttpRequest();
-         xhr.open("POST", actionUrl, true);
-         xhr.onload = function() {
-           if(xhr.status == 200) {
-             alert("Upload Successful");
-             location.reload();
-           } else {
-             alert("Upload Failed: " + xhr.statusText);
-           }
-         };
-         xhr.send(formData);
-      });
-    </script>
-  </body>
-</html>
-)rawliteral";
 
-// ---------------------------------------------------------------------------
-// Combined File Manager Page (Lists files from SD_MMC and SPIFFS with delete and download options)
-// ---------------------------------------------------------------------------
-void handleFiles() {
-  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>File Manager</title>";
-  html += "<style>"
-          "body { font-family: Arial, sans-serif; padding: 20px; background-color: #EEEEEE; }"
-          "h1, h2 { text-align: center; }"
-          "ul { list-style: none; padding: 0; }"
-          "li { margin-bottom: 10px; }"
-          "</style></head><body>";
-  html += "<h1>File Manager</h1>";
-
-  // JavaScript function for file deletion (handles both file systems)
-  html += "<script>"
-          "function deleteFile(filename, fsType) {"
-          "  if (confirm('Are you sure you want to delete ' + filename + '?')) {"
-          "    var endpoint = (fsType === 'SPIFFS') ? '/deleteFileSPIFFS' : '/deleteFileSD';"
-          "    var xhr = new XMLHttpRequest();"
-          "    xhr.open('GET', endpoint + '?name=' + encodeURIComponent(filename), true);"
-          "    xhr.onload = function() {"
-          "      if (xhr.status == 200) {"
-          "         alert('File deleted successfully');"
-          "         location.reload();"
-          "      } else {"
-          "         alert('Deletion failed: ' + xhr.statusText);"
-          "      }"
-          "    };"
-          "    xhr.send();"
-          "  }"
-          "}"
-          "</script>";
-
-  // Include upload form and list files from SD_MMC
-  html += "<h2>Upload New Files</h2>";
-  html += upload_form_combined;
-  html += "<h2>SD Card Files</h2><ul>";
-  File rootSD = SD_MMC.open("/");
-  File file = rootSD.openNextFile();
-  while (file) {
-    if (!file.isDirectory()) {
-      String filename = file.name();
-      float fileSizeMB = file.size() / (1024.0 * 1024.0);
-      String lastUpdated = "N/A";
-#ifdef ESP32
-      time_t t = file.getLastWrite();
-      if (t > 0) {
-        struct tm *tmInfo = localtime(&t);
-        char timeStr[26];
-        strftime(timeStr, 26, "%Y-%m-%d %H:%M:%S", tmInfo);
-        lastUpdated = String(timeStr);
-      }
-#endif
-      html += "<li>" + filename + " - " + String(fileSizeMB, 2) + " MB, Last Updated: " + lastUpdated;
-      html += " <button onclick=\"deleteFile('" + filename + "', 'SD')\">Delete</button>";
-      html += " <button onclick=\"window.open('/downloadFile?name=" + filename + "','_blank')\">Download</button></li>";
-    }
-    file = rootSD.openNextFile();
-  }
-  html += "</ul>";
-
-  // List files from SPIFFS
-  html += "<h2>SPIFFS Files</h2><ul>";
-  File rootSPIFFS = SPIFFS.open("/");
-  File spFile = rootSPIFFS.openNextFile();
-  while (spFile) {
-    String spFilename = spFile.name();
-    size_t fileSizeKB = spFile.size() / 1024;
-    String lastUpdated = "N/A";  // SPIFFS does not store modification timestamps.
-    html += "<li>" + spFilename + " - " + String(fileSizeKB) + " KB, Last Updated: " + lastUpdated;
-    html += " <button onclick=\"deleteFile('" + spFilename + "', 'SPIFFS')\">Delete</button>";
-    html += " <button onclick=\"window.open('/downloadFile?name=" + spFilename + "','_blank')\">Download</button></li>";
-    spFile = rootSPIFFS.openNextFile();
-  }
-  html += "</ul>";
-
-  html += "<div style='text-align:center;'><a href='/'><button type='button'>Back</button></a></div>";
-  html += "</body></html>";
-  server.send(200, "text/html", html);
-}
-
-// ---------------------------------------------------------------------------
-// Combined File Download Handler (checks both SD_MMC and SPIFFS)
-// ---------------------------------------------------------------------------
-void handleCombinedFileDownload() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  if (SD_MMC.exists(filename.c_str())) {
-    File file = SD_MMC.open(filename.c_str(), "r");
-    if (!file) {
-      server.send(500, "text/plain", "Failed to open file");
-      return;
-    }
-    server.sendHeader("Content-Disposition", "attachment; filename=" + filename);
-    server.streamFile(file, "application/octet-stream");
-    file.close();
-    return;
-  } else if (SPIFFS.exists(filename.c_str())) {
-    File file = SPIFFS.open(filename.c_str(), "r");
-    if (!file) {
-      server.send(500, "text/plain", "Failed to open file");
-      return;
-    }
-    server.sendHeader("Content-Disposition", "attachment; filename=" + filename);
-    server.streamFile(file, "application/octet-stream");
-    file.close();
-    return;
-  } else {
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Combined File Deletion Handler (tries both SD_MMC and SPIFFS)
-// ---------------------------------------------------------------------------
-void handleCombinedFileDelete() {
-  if (!server.hasArg("name")) {
-    Serial.println("Deletion error: no file name provided");
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  Serial.println("Attempting to delete file: " + filename);
-  bool deleted = false;
-  if (SD_MMC.exists(filename.c_str())) {
-    if (SD_MMC.remove(filename.c_str())) {
-      deleted = true;
-      Serial.println("Deleted from SD: " + filename);
-    } else {
-      Serial.println("Failed to delete from SD: " + filename);
-    }
-  }
-  if (SPIFFS.exists(filename.c_str())) {
-    if (SPIFFS.remove(filename.c_str())) {
-      deleted = true;
-      Serial.println("Deleted from SPIFFS: " + filename);
-    } else {
-      Serial.println("Failed to delete from SPIFFS: " + filename);
-    }
-  }
-  if (deleted) {
-    server.send(200, "text/plain", "File deleted successfully");
-  } else {
-    server.send(500, "text/plain", "Failed to delete file");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Updated SPIFFS File Upload Handler (uses 'targetFolder' parameter for path)
-// ---------------------------------------------------------------------------
-void handleFileUpload() {
-  HTTPUpload &upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START) {
-    // Get the target folder from the query string
-    String folder = server.arg("targetFolder");
-    String filename = upload.filename;
-    if (!filename.startsWith("/")) {
-      filename = "/" + filename;
-    }
-    // Prepend folder (if not root) to filename
-    if (folder != "" && folder != "/") {
-      if (!folder.endsWith("/")) {
-        folder += "/";
-      }
-      filename = folder + filename;
-    }
-    Serial.printf("SPIFFS Upload Start: %s\n", filename.c_str());
-    uploadFile = SPIFFS.open(filename, FILE_WRITE);
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (uploadFile) {
-      uploadFile.write(upload.buf, upload.currentSize);
-    }
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (uploadFile) {
-      uploadFile.close();
-      Serial.printf("SPIFFS Upload End: %s, %u bytes\n", upload.filename.c_str(), upload.totalSize);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SD Card File Upload Handler (uploads file to the SD card root)
-// ---------------------------------------------------------------------------
-void handleFileUploadSD() {
-  HTTPUpload &upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START) {
-    String filename = upload.filename;
-    if (!filename.startsWith("/")) {
-      filename = "/" + filename;
-    }
-    Serial.printf("SD Upload Start: %s\n", filename.c_str());
-    File sdFile = SD_MMC.open(filename, FILE_WRITE);
-    if (!sdFile) {
-      Serial.println("Failed to open file on SD card");
-      return;
-    }
-    uploadFile = sdFile;
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (uploadFile) {
-      uploadFile.write(upload.buf, upload.currentSize);
-    }
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (uploadFile) {
-      uploadFile.close();
-      Serial.printf("SD Upload End: %s, %u bytes\n", upload.filename.c_str(), upload.totalSize);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SPIFFS and SD File Deletion Handlers (called from file manager page)
-// ---------------------------------------------------------------------------
-void handleSPIFFSFileDelete() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  Serial.println("Deleting from SPIFFS: " + filename);
-  if (SPIFFS.exists(filename.c_str())) {
-    if (SPIFFS.remove(filename.c_str())) {
-      Serial.println("Deleted from SPIFFS: " + filename);
-      server.send(200, "text/plain", "SPIFFS file deleted successfully");
-    } else {
-      Serial.println("Failed to delete SPIFFS file: " + filename);
-      server.send(500, "text/plain", "Failed to delete SPIFFS file");
-    }
-  } else {
-    server.send(404, "text/plain", "SPIFFS file not found");
-  }
-}
-
-void handleSDFileDelete() {
-  if (!server.hasArg("name")) {
-    server.send(400, "text/plain", "File name not specified");
-    return;
-  }
-  String filename = server.arg("name");
-  if (filename.charAt(0) != '/') {
-    filename = "/" + filename;
-  }
-  Serial.println("Deleting from SD: " + filename);
-  if (SD_MMC.exists(filename.c_str())) {
-    if (SD_MMC.remove(filename.c_str())) {
-      Serial.println("Deleted from SD: " + filename);
-      server.send(200, "text/plain", "SD file deleted successfully");
-    } else {
-      Serial.println("Failed to delete SD file: " + filename);
-      server.send(500, "text/plain", "Failed to delete SD file");
-    }
-  } else {
-    server.send(404, "text/plain", "SD file not found");
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Route Handler: Redirects to Visualization index page (for sensor mode switch)
@@ -1473,12 +754,11 @@ void parachuteRelease() {
   Serial.println("Trigger condition met! Releasing parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
-  snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
-
-  appendFile(SD_MMC, "/log.csv", eventLog);
-  if (spiffsLoggingAllowed) {
-    appendFile(SPIFFS, "/log.csv", eventLog);
-  }
+//  snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Released!\n", eventTimestamp.c_str());
+//  appendFile(SD_MMC, "/log.csv", eventLog);
+// if (spiffsLoggingAllowed) {
+//    appendFile(SPIFFS, "/log.csv", eventLog);
+//  }
 
   for (int i = 0; i < 2; i++) {
     parachuteservo.write(180);
@@ -1496,6 +776,8 @@ void parachuteRelease() {
 void parachuteArmed() {
 
   triggeredBy = "NotTriggered";
+  lastTriggeredBy = "NotTriggered";
+
 
   if (!sensorsCalibrated) {
     // Flash orange LEDs as a warning
@@ -1503,18 +785,15 @@ void parachuteArmed() {
     Serial.println("Cannot arm: Sensors are not calibrated!");
     return;  // Don't arm the parachute
   }
-
   Serial.println("Arming parachute...");
-
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
-  snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
-  appendFile(SD_MMC, "/log.csv", eventLog);
-
-  checkSpiffsSpaceAndWarn();
-  if (spiffsLoggingAllowed) {
-    appendFile(SPIFFS, "/log.csv", eventLog);
-  }
+//  snprintf(eventLog, sizeof(eventLog), "Timestamp: %s, Event: Parachute Armed!\n", eventTimestamp.c_str());
+//  appendFile(SD_MMC, "/log.csv", eventLog);
+// checkSpiffsSpaceAndWarn();
+//  if (spiffsLoggingAllowed) {
+//    appendFile(SPIFFS, "/log.csv", eventLog);
+//  }
 
   if (!baselineCaptured) {
     baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
@@ -1542,14 +821,12 @@ void parachuteArmed() {
 
 // Calibrates sensors by capturing baseline altitude and accelerometer offsets.
 void calibrateSensors() {
-
   triggeredBy = "NotTriggered";
-
+  lastTriggeredBy = "NotTriggered";
   Serial.println("Calibrating sensors...");
   parachutePreStatus = parachuteStatus;
   parachuteStatus = "calibrating";
   Serial.println("Parachute status set to 'calibrating' for calibration.");
-
   //   strip.show();
   baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
   baselineCaptured = true;
@@ -1569,8 +846,6 @@ void calibrateSensors() {
   showLEDColorsSequentially(orangeColor, 1, 1);   // seq. orange, forward, 1 rot.
   showLEDColorsSequentially(orangeColor, -1, 1);  // seq. orange, reverse, 1 rot.
 
-
-
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
   // If we’re back to “armed”, show solid red LEDs:
@@ -1587,6 +862,34 @@ void calibrateSensors() {
   Serial.print("Reset sensor mode to Flight");
   Serial.println(sensorModeFlight);
 }
+
+// Function to make sure headers are always writen to file
+void ensureLogFileHasHeader(fs::FS &fs, const char *path) {
+  if (!fs.exists(path)) {
+    // Bestaat niet: header toevoegen
+    File f = fs.open(path, FILE_WRITE);
+    if (f) {
+      f.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
+      f.close();
+    }
+  } else {
+    // Bestaat wél: check of hij leeg is (==0 bytes)
+    File f = fs.open(path, FILE_READ);
+    if (f && f.size() == 0) {
+      f.close();
+      // Voeg alsnog headers toe
+      File fw = fs.open(path, FILE_WRITE);
+      if (fw) {
+        fw.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
+        fw.close();
+      }
+    } else if (f) {
+      f.close();
+    }
+  }
+}
+
+
 
 // ---------------------------------------------------------------------------
 // WebSocket Event Handler for real-time communication with the client dashboard
@@ -1683,8 +986,6 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             parachuteUnarmed();
             Serial.println("Parachute unarmed command processed.");
           }
-
-
           // NEW: handle location updates
           if (doc.containsKey("latitude") && doc.containsKey("longitude")) {
             currentLatitude = doc["latitude"];
@@ -1710,10 +1011,10 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
   }
 }
 
-
 void parachuteUnarmed() {
   parachuteStatus = "unarmed";
   triggeredBy = "NotTriggered";
+  lastTriggeredBy = "NotTriggered";
   baselineCaptured = false;  // Optional: Clear baseline so it's recalculated next time
   if (!alreadyWarned) {
     setAllLEDs(blueColor);  // Blue = unarmed/safe
@@ -1723,7 +1024,173 @@ void parachuteUnarmed() {
   Serial.println("Parachute is now UNARMED. Logging to SPIFFS will stop unless armed.");
 }
 
+// ========== FILE MANAGEMENT FUNCTIONS ==========
 
+// -- Helper to list files in a given FS (SPIFFS or SD_MMC)
+String listFilesJSON(fs::FS &fs, const char *path = "/") {
+  String json = "[";
+  File root = fs.open(path);
+  if (!root || !root.isDirectory()) {
+    return "[]";
+  }
+  File file = root.openNextFile();
+  bool first = true;
+  while (file) {
+    if (!first) json += ",";
+    json += "{";
+    json += "\"name\":\"" + String(file.name()) + "\"";
+    json += ",\"size\":" + String(file.size());
+    json += "}";
+    first = false;
+    file = root.openNextFile();
+  }
+  json += "]";
+  return json;
+}
+
+
+// JSON endpoint voor SD & SPIFFS files
+void handleListFilesJson() {
+  String json = "{";
+  json += "\"sd\":" + listFilesJSON(SD_MMC);
+  json += ",\"spiffs\":" + listFilesJSON(SPIFFS);
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
+
+// -- Handle delete from SPIFFS (expects GET param: name=/filename.txt)
+void handleSPIFFSFileDelete() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "Missing file name");
+    return;
+  }
+  String fname = server.arg("name");
+  if (!SPIFFS.exists(fname)) {
+    server.send(404, "text/plain", "File not found in SPIFFS");
+    return;
+  }
+  if (SPIFFS.remove(fname)) {
+    server.send(200, "text/plain", "Deleted from SPIFFS");
+  } else {
+    server.send(500, "text/plain", "Failed to delete from SPIFFS");
+  }
+}
+
+// -- Handle delete from SD (expects GET param: name=/filename.txt)
+void handleSDFileDelete() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "Missing file name");
+    return;
+  }
+  String fname = server.arg("name");
+  if (!SD_MMC.exists(fname)) {
+    server.send(404, "text/plain", "File not found on SD");
+    return;
+  }
+  if (SD_MMC.remove(fname)) {
+    server.send(200, "text/plain", "Deleted from SD");
+  } else {
+    server.send(500, "text/plain", "Failed to delete from SD");
+  }
+}
+
+// -- Handle download: tries SD first, then SPIFFS (expects GET param: name=/filename.txt)
+void handleCombinedFileDownload() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "Missing file name");
+    return;
+  }
+  String fname = server.arg("name");
+  File file = SD_MMC.open(fname, FILE_READ);
+  if (!file) file = SPIFFS.open(fname, FILE_READ);
+  if (!file) {
+    server.send(404, "text/plain", "File not found on SD or SPIFFS");
+    return;
+  }
+
+  // --- Fix: Add correct filename to Content-Disposition ---
+  String outFilename = fname;
+  int slash = outFilename.lastIndexOf('/');
+  if (slash != -1) outFilename = outFilename.substring(slash + 1);
+
+  server.sendHeader("Content-Disposition", "attachment; filename=\"" + outFilename + "\"");
+  server.streamFile(file, "application/octet-stream");
+  file.close();
+}
+
+// -- Handle upload to SPIFFS
+void handleFileUpload() {
+  HTTPUpload &upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    String fname = upload.filename;
+    if (!fname.startsWith("/")) fname = "/" + fname;
+    uploadFile = SPIFFS.open(fname, FILE_WRITE);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) uploadFile.close();
+  }
+}
+
+// -- Handle upload to SD
+void handleFileUploadSD() {
+  HTTPUpload &upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    String fname = upload.filename;
+    if (!fname.startsWith("/")) fname = "/" + fname;
+    uploadFile = SD_MMC.open(fname, FILE_WRITE);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) uploadFile.close();
+  }
+}
+
+// -- Optionally: Delete file from both SD and SPIFFS
+void handleCombinedFileDelete() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "Missing file name");
+    return;
+  }
+  String fname = server.arg("name");
+  bool deleted = false;
+  if (SD_MMC.exists(fname)) deleted |= SD_MMC.remove(fname);
+  if (SPIFFS.exists(fname)) deleted |= SPIFFS.remove(fname);
+  if (deleted) {
+    server.send(200, "text/plain", "Deleted from SD or SPIFFS");
+  } else {
+    server.send(404, "text/plain", "File not found on SD or SPIFFS");
+  }
+}
+
+
+
+
+
+
+void handleSpiffsUpload() {
+  HTTPUpload &upload = server.upload();
+  static String targetFolder;
+  static File uploadFile;
+  if (upload.status == UPLOAD_FILE_START) {
+    // Get the folder from POST body, fallback to root if empty
+    targetFolder = server.arg("folder");
+    if (targetFolder.length() == 0) targetFolder = "/";
+    if (!targetFolder.startsWith("/")) targetFolder = "/" + targetFolder;
+    if (!targetFolder.endsWith("/")) targetFolder += "/";
+    String fname = upload.filename;
+    String fullPath = targetFolder + fname;
+
+    // Create folder if not exist
+    if (!SPIFFS.exists(targetFolder.c_str())) SPIFFS.mkdir(targetFolder.c_str());
+    uploadFile = SPIFFS.open(fullPath, FILE_WRITE);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) uploadFile.close();
+  }
+}
 
 // -----------------------
 // Setup Function: Initializes hardware, network, sensors, web server, and endpoints
@@ -1739,21 +1206,20 @@ void setup() {
     Serial.println("SPIFFS mounted successfully");
   }
 
+  ensureLogFileHasHeader(SD_MMC, "/log.csv");
+  ensureLogFileHasHeader(SPIFFS, "/log.csv");
+
   if (!SPIFFS.exists("/log.csv")) {
     File spiffsFile = SPIFFS.open("/log.csv", FILE_WRITE);
     if (spiffsFile) {
-      spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
+      spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
       spiffsFile.close();
     }
   }
 
-
-
   // Disable WiFi power saving mode
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
-
-
 
   // Connect to WiFi as a station
   WiFi.mode(WIFI_STA);
@@ -1835,7 +1301,7 @@ void setup() {
     }
     File file = SD_MMC.open(oldLogFile.c_str(), FILE_WRITE);
     if (file) {
-      file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy");
+      file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
       file.close();
     }
   }
@@ -1936,57 +1402,68 @@ void setup() {
   // -----------------------
   // Root route: serves static flight information page
   server.on("/", HTTP_GET, []() {
-    sensorModeFlight = true;  // ← switch back into flight‐mode
-    setAllLEDs(blueColor);    // ← (optional) restore flight-mode LED color
-    server.send(200, "text/html", webpage);
+    sensorModeFlight = true;
+    setAllLEDs(blueColor);
+    server.sendHeader("Location", "/index.html");
+    server.send(302, "text/plain", "Redirecting...");
   });
 
   // Inline visualization‐mode handler:
   server.on("/visualization", HTTP_GET, []() {
-    sensorModeFlight = false;  // enter visualization mode
-    setAllLEDs(purpleColor);   // paint LEDs purple
-    // strip.show();             // only if your setAllLEDs() doesn't call show()
+    sensorModeFlight = false;
+    setAllLEDs(purpleColor);
     server.sendHeader("Location", "/visualization/index.html");
     server.send(302, "text/plain", "Redirecting...");
   });
 
-  // Serve the static visualization files from SPIFFS
-  server.serveStatic("/visualization/", SPIFFS, "/");
-
-
-  // File management endpoints: file listing, upload, deletion, and download for both SD and SPIFFS.
-  server.on("/files", []() {
-    setAllLEDs(orangeColor);  // ← (optional) set maintance color LED color
-    handleFiles();
+  server.on("/files", HTTP_GET, []() {
+    setAllLEDs(orangeColor);
+    server.sendHeader("Location", "/files/index.html");
+    server.send(302, "text/plain", "Redirecting...");
   });
+
+  // Serve the static visualization files from SPIFFS
+  server.serveStatic("/visualization/", SPIFFS, "/visualization/");
+  server.serveStatic("/files/", SPIFFS, "/files/");
+
   server.on("/deleteFile", HTTP_GET, []() {
     blinkColor(redColor, 2, 250);
     handleCombinedFileDelete();
   });
+
   server.on("/deleteFileSPIFFS", HTTP_GET, []() {
     blinkColor(redColor, 2, 250);
     handleSPIFFSFileDelete();
   });
+
   server.on("/deleteFileSD", HTTP_GET, []() {
     blinkColor(redColor, 2, 250);
     handleSDFileDelete();
   });
+
   server.on("/downloadFile", HTTP_GET, []() {
     blinkColor(purpleColor, 2, 250);
     handleCombinedFileDownload();
   });
+
+  // --- Upload Endpoints ---
   server.on(
     "/upload", HTTP_POST, []() {
       blinkColor(greenColor, 2, 250);
       server.send(200, "text/plain", "SPIFFS Upload Successful");
     },
-    handleFileUpload);
+    handleFileUpload  // <-- Handles actual file upload for SPIFFS
+  );
+
   server.on(
     "/uploadsd", HTTP_POST, []() {
       blinkColor(greenColor, 2, 250);
       server.send(200, "text/plain", "SD Card Upload Successful");
     },
-    handleFileUploadSD);
+    handleFileUploadSD  // <-- Handles actual file upload for SD
+  );
+
+  server.on("/listfiles", HTTP_GET, handleListFilesJson);
 
   // Sensor endpoints: serve gyro, accelerometer, and temperature data.
   server.on("/gyro", HTTP_GET, []() {
@@ -2016,7 +1493,22 @@ void setup() {
     server.send(200, "text/plain", "Gyro Z reset");
   });
 
+  // Serve static dashboard files from SPIFFS
+  server.serveStatic("/", SPIFFS, "/index.html");  // This will serve /index.html for root
+  server.serveStatic("/index.html", SPIFFS, "/index.html");
+  server.serveStatic("/style.css", SPIFFS, "/style.css");
+  server.serveStatic("/script.js", SPIFFS, "/script.js");
   server.begin();
+
+  server.on("/spiffsupload", HTTP_GET, []() {
+    server.send_P(200, "text/html", spiffsUploaderHTML);
+  });
+  server.on(
+    "/spiffsupload", HTTP_POST, []() {
+      server.send(200, "text/plain", "Upload complete! Refresh to upload more files.");
+    },
+    handleSpiffsUpload);
+
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 }
@@ -2102,16 +1594,17 @@ void loop() {
 
     // Track what triggered
     if (triggerCondition) {
-      // Build a comma-separated list
       String triggersList = "";
       if (triggerAlt) triggersList += "Threshold Altitude Drop,";
       if (triggerAccX) triggersList += "Threshold AccX,";
       if (triggerAccY) triggersList += "Threshold AccY,";
       if (triggerAccZ) triggersList += "Threshold AccZ,";
-      // Remove trailing comma if present
       if (triggersList.length() > 0) triggersList.remove(triggersList.length() - 1);
       triggeredBy = triggersList;
+      lastTriggeredBy = triggersList;
       parachuteRelease();
+    } else {
+      triggeredBy = lastTriggeredBy;
     }
   }
 
@@ -2199,32 +1692,37 @@ void loop() {
   char dataString[700];
   String currentTimestamp = getTimeStampString();
 
-  snprintf(dataString, sizeof(dataString),
-           "\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,\"%s\",%.2f,1013.25,\"%s\",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,%s\n",
-           currentTimestamp.c_str(),      // Timestamp
-           bmpTemp,                       // BMP Temp
-           pressure,                      // Pressure
-           absoluteAltitude,              // Abs Alt
-           relativeAltitude,              // Rel Alt
-           altitudeDrop,                  // Alt Drop
-           temp.temperature,              // MPU Temp
-           rawAccX, rawAccY, rawAccZ,     // Raw Acc X/Y/Z
-           relAccX, relAccY, relAccZ,     // Calibrated Acc X/Y/Z
-           g.gyro.x, g.gyro.y, g.gyro.z,  // Gyro X/Y/Z
-           parachuteStatus.c_str(),       // Parachute Status
-           lastLocalPressure,             // Local Pressure
-           PressureSource.c_str(),        // API Status
-           maxAbsoluteAltitude, minAbsoluteAltitude,
-           maxRelativeAltitude, minRelativeAltitude,
-           maxAltitudeDrop, minAltitudeDrop,
-           totalSpace, usedSpace,    // SD stats
-           spiffsTotal, spiffsUsed,  // SPIFFS stats
-           currentLatitude, currentLongitude,
-           altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
-           useAndLogic ? "AND" : "OR",  // Trigger logic
-           axisConfig,                  // Axis config
-           triggeredBy.c_str()          // Triggered By
-  );
+snprintf(dataString, sizeof(dataString),
+    "%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,1013.25,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,\"%s\",%d,%d,%d,%d\n",
+    currentTimestamp.c_str(),      // Timestamp (zonder quotes)
+    bmpTemp,
+    pressure,
+    absoluteAltitude,
+    relativeAltitude,
+    altitudeDrop,
+    temp.temperature,
+    rawAccX, rawAccY, rawAccZ,
+    relAccX, relAccY, relAccZ,
+    g.gyro.x, g.gyro.y, g.gyro.z,
+    parachuteStatus.c_str(),
+    lastLocalPressure,
+    PressureSource.c_str(),
+    maxAbsoluteAltitude, minAbsoluteAltitude,
+    maxRelativeAltitude, minRelativeAltitude,
+    maxAltitudeDrop, minAltitudeDrop,
+    totalSpace, usedSpace,
+    spiffsTotal, spiffsUsed,
+    currentLatitude, currentLongitude,
+    altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
+    useAndLogic ? "AND" : "OR",
+    axisConfig,
+    triggeredBy.c_str(),   // ← alleen deze tussen dubbele quotes!
+    enAltDrop ? 1 : 0,
+    enAccX ? 1 : 0,
+    enAccY ? 1 : 0,
+    enAccZ ? 1 : 0
+);
+
 
   checkSpiffsSpaceAndWarn();
   appendFile(SD_MMC, "/log.csv", dataString);

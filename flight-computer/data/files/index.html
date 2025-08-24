@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>File Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>File Manager</h1>
+
+  <!-- Upload knop -->
+  <h2>Upload New Files</h2>
+  <div class="centered-upload-btn">
+    <a href="/spiffsupload">
+      <button class="upload-btn" type="button">SPIFFS bestanden uploaden</button>
+    </a>
+  </div>
+
+  <div class="msg" id="result"></div>
+
+  <!-- File lists -->
+  <div id="file-lists">
+    <h2>SD Card Files</h2>
+    <ul id="sd-list"></ul>
+
+    <h2>SPIFFS Files</h2>
+    <ul id="spiffs-list"></ul>
+  </div>
+
+  <div style='text-align:center; margin-top:24px;'>
+    <a href='/'><button type='button'>Back</button></a>
+  </div>
+
+  <!-- Alleen script.js, geen extra scripts nodig -->
+  <script src="script.js"></script>
+</body>
+</html>

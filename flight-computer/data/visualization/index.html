@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Flight Computer - Visualization</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css"
+    integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/107/three.min.js"></script>
+</head>
+
+<body>
+  <div class="topnav">
+    <h1><i class="far fa-compass"></i>Flight Computer - Visualization <i class="far fa-compass"></i></h1>
+  </div>
+
+  <div class="content">
+    <div class="cards">
+      <div class="card">
+        <p class="card-title">GYROSCOPE</p>
+        <p><span class="reading">X: <span id="gyroX"></span> rad</span></p>
+        <p><span class="reading">Y: <span id="gyroY"></span> rad</span></p>
+        <p><span class="reading">Z: <span id="gyroZ"></span> rad</span></p>
+      </div>
+      <div class="card">
+        <p class="card-title">ACCELEROMETER</p>
+        <p><span class="reading">X: <span id="accX"></span> ms<sup>2</sup></span></p>
+        <p><span class="reading">Y: <span id="accY"></span> ms<sup>2</sup></span></p>
+        <p><span class="reading">Z: <span id="accZ"></span> ms<sup>2</sup></span></p>
+      </div>
+      <div class="card">
+        <p class="card-title">TEMPERATURE</p>
+        <p><span class="reading"><span id="temp"></span> &deg;C</span></p>
+        <p class="card-title">3D ANIMATION</p>
+        <p>
+          <button id="reset" onclick="resetPosition(this)">RESET POSITION</button>
+          <button id="resetX" onclick="resetPosition(this)">X</button>
+          <button id="resetY" onclick="resetPosition(this)">Y</button>
+          <button id="resetZ" onclick="resetPosition(this)">Z</button>
+        </p>
+        <p>
+          <button id="back">← Go to Main UI</button>
+        </p>
+      </div>
+      <div class="button-container">
+        <label for="axisConfig">Axis Mapping Configuration:</label>
+        <select id="axisConfig">
+          <option value="0">0 - Swap x>-X and y>Z and z>Y</option>
+          <option value="1">1 - Swap x>-X and y>Y and z>Z</option>
+          <option value="2">2 - Swap x>Y and y>X and z>Z</option>
+          <option value="3">3 - Swap x>Y and y>Z and z>X</option>
+          <option value="4">4 - Swap x>Z and y>Y and z>X</option>
+          <option value="5">5 - Swap x>Z and y>X and z>Y</option>
+        </select>
+        <button type="button" onclick="button_update_axis()">Update Axis Mapping</button>
+      </div>
+    </div>
+    <div id="3Dcube" class="cube-content"></div>
+  </div>
+
+  <script>
+    // This function reads the currently selected axis mapping option from the dropdown
+    // and sends an update message to the firmware via the WebSocket.
+    function button_update_axis() {
+      var configValue = document.getElementById("axisConfig").value;
+      // currentAxisConfig is declared in script.js
+      currentAxisConfig = parseInt(configValue);
+      // Send the updated configuration via the WebSocket.
+      var msg = { axisConfig: currentAxisConfig };
+      socket.send(JSON.stringify(msg));
+      console.log("Updated Axis Mapping to config: " + currentAxisConfig);
+    }
+  </script>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
