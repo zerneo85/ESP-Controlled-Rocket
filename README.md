@@ -18,7 +18,8 @@ The ESP Controlled Rocket repository documents an advanced, ESP32-powered flight
     - [Code Overview](#code-overview)
     - [Screenshots](#screenshots)
       - [Dashboard, File Manager, and Visualization](#dashboard-file-manager-and-visualization)
-  - [3D Designs](#3d-designs)
+  - [3D Parts \& Downloads](#3d-parts--downloads)
+    - [Parts Overview (Summary)](#parts-overview-summary)
   - [Assembly \& Build](#assembly--build)
   - [Usage](#usage)
     - [Setting Up the Flight Computer](#setting-up-the-flight-computer)
@@ -32,6 +33,7 @@ The ESP Controlled Rocket repository documents an advanced, ESP32-powered flight
   - [Release Notes](#release-notes)
     - [v3.7.0](#v370)
   - [Contributing](#contributing)
+
 
 
 ---
@@ -177,18 +179,33 @@ See [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino)
 
 ---
 
-## 3D Designs
-Optimized STL files and mechanical drawings are accesable in Tinkercad [`3d-designs`](https://www.tinkercad.com/things/2OLB51qPn6D-soda-bottle-rocket-air-pressure?sharecode=rF4dOlGs_3UIkk9-KeF3I1006FAJQaIejBceTLLDq_E).
+## 3D Parts & Downloads
 
-- Blue – Parachute Ejection Module
-- Dark Green – Launching Platform Air Pressure Release
-- Gray – Simple Rocket & Parachute Module
-- Green – Launching Platform Cable Tie Release
-- Light Green - Servo Arms
-- Orange – Bottle & Nozzle Connectors
-- Purple - Fins
-- Red – Rail Guide Mount
-- Yellow – Payload Enclosure
+All 3D-printable parts for the ESP Controlled Rocket are available:
+
+- **Repository:** [`/3d-designs/`](3d-designs/) – STL files with exact filenames as listed
+- **Tinkercad Project:** [Soda Water Bottle Rocket Air Pressure](https://www.tinkercad.com/things/2OLB51qPn6D-soda-bottle-rocket-air-pressure?sharecode=rF4dOlGs_3UIkk9-KeF3I1006FAJQaIejBceTLLDq_E)  
+  *(note: transparent parts represent older versions)*
+- **Thingiverse:** [Soda Water Bottle Rocket Air Pressure](https://www.thingiverse.com/thing:7127173)
+
+### Parts Overview (Summary)
+
+Below is a categorized overview of the 3D-printable parts.  
+For the **complete list with detailed descriptions and references**, see [docs/3d_parts_overview.md](docs/3d_parts_overview.md).
+
+| Use Category                          | Colors                    |
+|---------------------------------------|---------------------------|
+| Bottle & Nozzle & Hose Connectors     | Orange                    |
+| Fins                                  | Dark Purple, Light Purple |
+| Launching Platform Air Pressure Release | Dark Green              |
+| Launching Platform Cable Tie Release  | Green                     |
+| Parachute Ejection Module             | Blue                      |
+| Payload Enclosure                     | Yellow                    |
+| Rail Guide Mount                      | Red                       |
+| Servo Arms                            | Light Green               |
+| Simple Rocket & Parachute Module      | Gray                      |
+
+
 
 ---
 
