@@ -11,6 +11,7 @@ The ESP Controlled Rocket repository documents an advanced, ESP32-powered flight
   - [Rocket Variants](#rocket-variants)
     - [Rocket A](#rocket-a)
     - [Rocket B](#rocket-b)
+  -  [Splicing Bottles](https://zerneo85.github.io/ESP-Controlled-Rocket/Water-Rocket-Splice-Bilingual.html)
 - [ESP Controlled Rocket](#esp-controlled-rocket-1)
   - [Flight Computer](#flight-computer)
     - [Features](#features)
