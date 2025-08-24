@@ -1,23 +1,24 @@
 /*
- * Flight Computer Firmware for ESP32 – Version 3.7.0 (Major Refactor, Modularization & API Documentation)
+ * Flight Computer Firmware for ESP32 – Version 3.7.0
  *
- * What’s new since 3.6.0:
- *  - **Major Refactor:**
- *      - Codebase split into multiple files/modules for maintainability:
- *          • Core logic, sensor drivers, and utilities separated into distinct headers (.h) and implementation (.cpp) files.
- *          • Web endpoints, WebSocket events, file management, and dashboard logic each live in their own files.
- *          • Shared types/constants and color/LED routines moved to dedicated utility files.
- *      - Central main.cpp now focuses on setup(), loop(), and high-level orchestration.
+ * What’s new since 3.6.0 (Major Refactor, Modularization & API Documentation):
  *
- *  - **Comprehensive API Documentation Added:**
- *      - All HTTP endpoints, file handlers, and WebSocket messages are now fully documented (see below).
- *      - Endpoint summary included in this header and in docs/api.md for external reference.
- *      - REST, WebSocket, and OTA update endpoints are now clearly named and documented.
+ *  - **Dashboard & Visualization to SPIFFS (v3.7.0):**
+ *      - All web UI assets (index.html, style.css, script.js, visualization files) are now hosted
+ *        directly from SPIFFS instead of being embedded in firmware.
+ *      - Benefits:
+ *          • Reduced firmware binary size
+ *          • Faster dashboard/visualization loading times
+ *          • UI can be updated or replaced without reflashing firmware
+ *          • Easier maintenance and separation of UI from flight logic
  *
- *  - **Other Changes:**
- *      - Minor code clean-up and in-line documentation improvements.
- *      - Improved error handling for file operations.
- *      - Updated dashboard/static server logic to work with new modular file structure.
+ *  - **File Management Integration (v3.7.0):**
+ *      - SPIFFS File Manager can now be used to update dashboard/visualization assets.
+ *      - This enables UI-only updates during development or field testing.
+ *
+ *  - **Other Improvements (v3.7.0):**
+ *      - Minor bug fixes and performance optimizations
+ *      - Improved consistency in logging warnings when SPIFFS storage is nearly full
  *
  * ┌───────────────────────────────────────────────┐
  * │                  Endpoints Overview           │
@@ -59,23 +60,7 @@
  * ───── Outbound API Calls ──────────────
  *  - OpenWeatherMap API for live pressure calibration
  *
- * For more details, see docs/api.md and individual module headers.
- *
- * ───── 3.7.0 Changelog Summary ──────────────
- *  - Split codebase into separate files:
- *      • main.cpp: Main entry, setup(), loop(), orchestrator
- *      • endpoints.cpp/h: All HTTP endpoint registrations & handlers
- *      • websocket.cpp/h: WebSocket event handling
- *      • sensors.cpp/h: Sensor initialization, reading, calibration logic
- *      • led.cpp/h: LED and color routines
- *      • files.cpp/h: File management for SD/SPIFFS
- *      • utils.cpp/h: Common helpers (timestamp, formatting, API)
- *      • static/: Web assets (index.html, style.css, script.js, visualization)
- *      • docs/api.md: API and endpoint docs
- *  - Improved inline documentation, modularity, and error handling
- *  - No changes to core flight logic; all features and triggers as in 3.6.0
- *
- * ───── Dashboard & LED Feedback Reference (unchanged) ──────────────
+ * ───── Dashboard & LED Feedback Reference ──────────────
  *  • Color Wheel Indices (0–255 → RGB via strip.Wheel(index)):
  *      0   → red
  *     30   → orange
@@ -103,6 +88,7 @@
  *
  * For troubleshooting, see README and module docs.
  */
+
 
 
 // -----------------------

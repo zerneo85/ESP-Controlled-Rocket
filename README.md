@@ -5,23 +5,34 @@ The ESP Controlled Rocket repository documents an advanced, ESP32-powered flight
 ---
 
 ## Table of Contents
+- [ESP Controlled Rocket](#esp-controlled-rocket)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Rocket Variants](#rocket-variants)
+    - [Rocket A](#rocket-a)
+    - [Rocket B](#rocket-b)
+- [ESP Controlled Rocket](#esp-controlled-rocket-1)
+  - [Flight Computer](#flight-computer)
+    - [Features](#features)
+    - [LED Status Indicators](#led-status-indicators)
+    - [Code Overview](#code-overview)
+    - [Screenshots](#screenshots)
+      - [Dashboard, File Manager, and Visualization](#dashboard-file-manager-and-visualization)
+  - [3D Designs](#3d-designs)
+  - [Assembly \& Build](#assembly--build)
+  - [Usage](#usage)
+    - [Setting Up the Flight Computer](#setting-up-the-flight-computer)
+    - [Setting Triggers](#setting-triggers)
+    - [SPIFFS Logging](#spiffs-logging)
+  - [Rocket Performance (Simulation Results)](#rocket-performance-simulation-results)
+    - [Water Rocket Performance Table (8 bar, realistic empty mass)](#water-rocket-performance-table-8-bar-realistic-empty-mass)
+      - [Assumptions/Notes:](#assumptionsnotes)
+  - [References \& Further Simulation](#references--further-simulation)
+  - [Rocket Weight](#rocket-weight)
+  - [Release Notes](#release-notes)
+    - [v3.7.0](#v370)
+  - [Contributing](#contributing)
 
-- [Introduction](#introduction)
-- [Rocket Variants](#rocket-variants)
-- [Flight Computer](#flight-computer)
-  - [Features](#features)
-  - [LED Status Indicators](#led-status-indicators)
-  - [Code Overview](#code-overview)
-  - [Screenshots](#screenshots)
-- [3D Designs](#3d-designs)
-- [Assembly & Build](#assembly--build)
-- [Usage](#usage)
-  - [Setting Triggers](#setting-triggers)
-  - [SPIFFS Logging](#spiffs-logging)
-- [Rocket Performance (Simulation Results)](#rocket-performance-simulation-results)
-- [References & Further Simulation](#references--further-simulation)
-- [Rocket Weight](#rocket-weight)
-- [Contributing](#contributing)
 
 ---
 
@@ -58,6 +69,10 @@ There are two rocket builds:
 
 ---
 
+# ESP Controlled Rocket
+
+...
+
 ## Flight Computer
 
 ### Features
@@ -84,14 +99,18 @@ There are two rocket builds:
   - Upload/download/delete files on SD card and SPIFFS
 - **3D Visualization Support:**  
   - Streams orientation/telemetry for optional real-time display
+  - **Since v3.7.0:** Visualization assets are stored directly in SPIFFS for faster access and easier deployment
 - **Configurable Triggers:**  
   - Set altitude, descent, and arming conditions via web dashboard
 - **Time Synchronization:**  
   - NTP for accurate timestamps
 - **Flexible Axis Orientation:**  
   - Change IMU axes in software for different mounting positions
+- **Improved Web Dashboard (v3.7.0):**  
+  - Dashboard HTML, CSS, and JS files are now hosted from SPIFFS memory instead of flash-coding, reducing firmware size and simplifying updates.
 
----
+...
+
 
 ### LED Status Indicators
 
@@ -159,12 +178,17 @@ See [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino)
 ---
 
 ## 3D Designs
+Optimized STL files and mechanical drawings are accesable in Tinkercad [`3d-designs`](https://www.tinkercad.com/things/2OLB51qPn6D-soda-bottle-rocket-air-pressure?sharecode=rF4dOlGs_3UIkk9-KeF3I1006FAJQaIejBceTLLDq_E).
 
-**COMING SOON**  
-Optimized STL files and mechanical drawings are in the [`3d-designs`](3d-designs) folder.
-
-- Electronics bay, payload bay, bottle adapters, nosecone, and fin set
-- Mounting hardware for ESP32, sensors, and LED ring
+- Blue – Parachute Ejection Module
+- Dark Green – Launching Platform Air Pressure Release
+- Gray – Simple Rocket & Parachute Module
+- Green – Launching Platform Cable Tie Release
+- Light Green - Servo Arms
+- Orange – Bottle & Nozzle Connectors
+- Purple - Fins
+- Red – Rail Guide Mount
+- Yellow – Payload Enclosure
 
 ---
 
@@ -224,13 +248,16 @@ To change default trigger parameters in code, edit the config section in [`fligh
 
 ---
 
+
 ### SPIFFS Logging
 
 - **All critical events and telemetry** are logged to both SD card and SPIFFS (flash memory) as backup.
 - If SPIFFS free space drops below 10%, a **red/white alternating LED flash** warns the user. If full, **fast red flashing** and a dashboard warning are triggered; logging pauses until space is freed.
 - SPIFFS logs can be downloaded/deleted from the File Manager page in the web UI.
+- **Since v3.7.0:** The complete web dashboard and visualization interface are also stored in SPIFFS. This enables updates of UI components without reflashing the firmware.
 
 ---
+
 
 ## Rocket Performance (Simulation Results)
 
@@ -282,6 +309,18 @@ Full details for both rocket builds are in the simulation PDFs, generated with [
 ## Rocket Weight
 
 See [`docs/rocket_weight.xlsx`](docs/rocket_weight.xlsx) for weight of the individual parts.
+
+## Release Notes
+
+### v3.7.0
+- Moved **dashboard and visualization files** into **SPIFFS memory**:
+  - Frees up firmware space  
+  - Allows updating of UI components via SPIFFS file manager  
+  - Faster load times for dashboards and visualizations
+- Improved maintainability by separating UI assets from firmware code
+- Minor bug fixes and optimizations
+
+
 
 ## Contributing
 
