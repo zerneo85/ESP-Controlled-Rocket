@@ -55,11 +55,11 @@ There are two rocket builds:
 
 - Single PET bottle
 - Mechanical parachute release
-- See [docs/aircommandrockets_simulator_rocket_a.pdf](docs/aircommandrockets_simulator_rocket_a.pdf) for simulation results
+- See [docs/aircommandrockets_simulator_rocket_a.pdf](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/aircommandrockets_simulator_rocket_a.pdf) for simulation results
 
 ### Rocket B
 
-- Three 1.5-liter PET bottles
+- Three or more 1.5-liter PET bottles
 - ESP32 flight computer with:
   - Telemetry (altitude, acceleration, orientation, etc.)
   - Web dashboard (WiFi)
@@ -68,7 +68,7 @@ There are two rocket builds:
   - RGB LED status ring
   - **Automatic location/pressure/height fetching from OpenWeather API**
   - **Location and reference pressure/height can be updated on-the-fly from the web dashboard**
-- See [docs/aircommandrockets_simulator_rocket_b.pdf](docs/aircommandrockets_simulator_rocket_b.pdf) for simulation results
+- See [docs/aircommandrockets_simulator_rocket_b.pdf](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/aircommandrockets_simulator_rocket_b.pdf) for simulation results
 
 ---
 
@@ -134,7 +134,7 @@ The onboard RGB LED ring signals various states:
 | SPIFFS almost full            | Alternating red/white flash               |
 | SPIFFS/SD full or write fail  | Fast flashing red                         |
 
-**Note:** All LED sequences are customizable in the firmware ([flight-computer/led.cpp](flight-computer/led.cpp)).
+**Note:** All LED sequences are customizable in the firmware.
 
 ---
 
@@ -153,7 +153,7 @@ The main firmware is organized as follows:
 - **Communication**  
   Runs a web server and WebSocket interface for live telemetry, file management, trigger config, and OTA updates.
 - **Web-Based File Management**  
-  Lets you view, upload, download, or delete files from both SD card and SPIFFS through the web UI ([flight-computer/data/index.html](flight-computer/data/index.html)).
+  Lets you view, upload, download, or delete files from both SD card and SPIFFS through the web UI ([flight-computer/data/index.html](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/flight-computer/data/index.html)).
 - **3D Visualization Support**  
   Broadcasts orientation/quaternion and motion data for an optional web-based real-time 3D rocket visualization (experimental).
 - **Logging**  
@@ -165,18 +165,20 @@ The main firmware is organized as follows:
 - **OTA Updates**  
   Supports uploading new firmware from the web interface, including status feedback via LED.
 
-See [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino) and related modules for implementation details.
+See [`flight-computer/flight-computer.ino`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/flight-computer/flight-computer.ino) and related modules for implementation details.
 
 ---
 
 ### Screenshots
 
 #### Dashboard, File Manager, and Visualization
-
-![All dashboards video](media/all_dashboards.gif)  
-![Flight Computer Screenshot](media/flight_computer_dashboard_0.png)  
-![File Manager Screenshot](media/filemanager_dashboard_1.png)  
-![Visualization Screenshot](media/visualization_dashboard_1.png)
+![All dashboards video](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/all_dashboards.gif)  
+![Flight Computer Screenshot](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/flight_computer_dashboard_0.png)  
+![File Manager Screenshot](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/filemanager_dashboard_1.png)  
+![Visualization Screenshot](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/visualization_dashboard_1.png)  
+![Impression A](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/impression_a.jpeg) 
+![Impression E](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/impression_e.jpeg) 
+![Payload Parachute Release Video](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/Payload_Parachute_Release.gif)  
 
 ---
 
@@ -184,7 +186,7 @@ See [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino)
 
 All 3D-printable parts for the ESP Controlled Rocket are available:
 
-- **Repository:** [`/3d-designs/`](3d-designs/) – STL files with exact filenames as listed
+- **Repository:** [`/3d-designs/`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/3d-designs/) – STL files with exact filenames as listed
 - **Tinkercad Project:** [Soda Water Bottle Rocket Air Pressure](https://www.tinkercad.com/things/2OLB51qPn6D-soda-bottle-rocket-air-pressure?sharecode=rF4dOlGs_3UIkk9-KeF3I1006FAJQaIejBceTLLDq_E)  
   *(note: transparent parts represent older versions)*
 - **Thingiverse:** [Soda Water Bottle Rocket Air Pressure](https://www.thingiverse.com/thing:7127173)
@@ -192,7 +194,7 @@ All 3D-printable parts for the ESP Controlled Rocket are available:
 ### Parts Overview (Summary)
 
 Below is a categorized overview of the 3D-printable parts.  
-For the **complete list with detailed descriptions and references**, see [docs/3d_parts_overview.md](docs/3d_parts_overview.md).
+For the **complete list with detailed descriptions and references**, see [docs/3d_parts_overview.md](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/3d_parts_overview.md).
 
 | Use Category                          | Colors                    |
 |---------------------------------------|---------------------------|
@@ -212,7 +214,7 @@ For the **complete list with detailed descriptions and references**, see [docs/3
 
 ## Assembly & Build
 
-See [`docs/assembly_guide.md`](docs/assembly_guide.md) for wiring, assembly, and mounting tips.
+See [`docs/assembly_guide.md`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/assembly_guide.md) for wiring, assembly, and mounting tips.
 
 ---
 
@@ -221,7 +223,7 @@ See [`docs/assembly_guide.md`](docs/assembly_guide.md) for wiring, assembly, and
 ### Setting Up the Flight Computer
 
 1. **WiFi Configuration:**  
-   - Edit WiFi credentials in [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino)
+   - Edit WiFi credentials in [`flight-computer/flight-computer.ino`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/flight-computer/flight-computer.ino)
    - If WiFi fails, device enters Access Point mode (see [LED Status Indicators](#led-status-indicators))
 
 2. **Calibrating Sensors:**  
@@ -233,7 +235,7 @@ See [`docs/assembly_guide.md`](docs/assembly_guide.md) for wiring, assembly, and
    - The firmware applies the corresponding transformation to all motion data.
 
 4. **Changing Triggers:**  
-   - All parachute triggers (arming/release altitude, speed, time) can be set via the web interface, or changed in the config section of [`flight-computer.ino`](flight-computer/flight-computer.ino).
+   - All parachute triggers (arming/release altitude, speed, time) can be set via the web interface, or changed in the config section of [`flight-computer.ino`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/flight-computer/flight-computer.ino).
 
 5. **Changing Location & Weather Reference:**  
    - Update launch site coordinates and pressure reference directly from the dashboard.
@@ -262,7 +264,7 @@ All parachute release and arming triggers are **configurable via the web dashboa
 - **Release:** Configure required altitude drop (relative or absolute), minimum speed, and/or custom sensor thresholds
 - **Manual override** is always available from the dashboard
 
-To change default trigger parameters in code, edit the config section in [`flight-computer/flight-computer.ino`](flight-computer/flight-computer.ino).
+To change default trigger parameters in code, edit the config section in [`flight-computer/flight-computer.ino`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/flight-computer/flight-computer.ino).
 
 ---
 
@@ -283,10 +285,10 @@ Full details for both rocket builds are in the simulation PDFs, generated with [
 
 | Variant   | PDF                                                                  | Volume (L) | Water (L) | Empty Mass (g) | Nozzle (mm) | Peak Altitude (m) | Notes        |
 |-----------|--------------------------------------------------------------------- |----------- |---------- |--------------- |------------ |------------------ |-------------|
-| Rocket A  | [docs/aircommandrockets_simulator_rocket_a.pdf](docs/aircommandrockets_simulator_rocket_a.pdf) | 1.5        | 0.5      | 198           | 7          | 67.7             | Mechanical  |
-| Rocket B  | [docs/aircommandrockets_simulator_rocket_b.pdf](docs/aircommandrockets_simulator_rocket_b.pdf) | 4.5        | 1.0      | 803           | 7          | 50.0             | ESP32/auto  |
+| Rocket A  | [docs/aircommandrockets_simulator_rocket_a.pdf](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/aircommandrockets_simulator_rocket_a.pdf) | 1.5        | 0.5      | 198           | 7          | 67.7             | Mechanical  |
+| Rocket B  | [docs/aircommandrockets_simulator_rocket_b.pdf](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/aircommandrockets_simulator_rocket_b.pdf) | 4.5        | 1.0      | 803           | 7          | 50.0             | ESP32/auto  |
 
-- *See PDFs in [`docs/`](docs/) for full simulation graphs and breakdown.*
+- *See PDFs in [`docs/`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/) for full simulation graphs and breakdown.*
 - *For further/different setups, use the [Air Command Rocket Simulator](http://www.aircommandrockets.com/sim/simulator.htm).*
 
 
@@ -318,15 +320,15 @@ Full details for both rocket builds are in the simulation PDFs, generated with [
 ## References & Further Simulation
 
 - [Air Command Rocket Simulator](http://www.aircommandrockets.com/sim/simulator.htm) – Advanced web-based tool for bottle rocket performance prediction and optimization
-- [`docs/aircommandrockets_simulator_rocket_a.pdf`](docs/aircommandrockets_simulator_rocket_a.pdf) (Rocket A)
-- [`docs/aircommandrockets_simulator_rocket_b.pdf`](docs/aircommandrockets_simulator_rocket_b.pdf) (Rocket B)
+- [`docs/aircommandrockets_simulator_rocket_a.pdf`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/aircommandrockets_simulator_rocket_a.pdf) (Rocket A)
+- [`docs/aircommandrockets_simulator_rocket_b.pdf`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/aircommandrockets_simulator_rocket_b.pdf) (Rocket B)
 
 ---
 
 
 ## Rocket Weight
 
-See [`docs/rocket_weight.xlsx`](docs/rocket_weight.xlsx) for weight of the individual parts.
+See [`docs/rocket_parts.xlsx`](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/docs/rocket_parts.xlsx) for weight of the individual parts.
 
 ## Release Notes
 
