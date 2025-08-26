@@ -59,7 +59,7 @@ There are two rocket builds:
 
 ### Rocket B
 
-- Three 1.5-liter PET bottles
+- Three or more 1.5-liter PET bottles
 - ESP32 flight computer with:
   - Telemetry (altitude, acceleration, orientation, etc.)
   - Web dashboard (WiFi)
@@ -134,7 +134,7 @@ The onboard RGB LED ring signals various states:
 | SPIFFS almost full            | Alternating red/white flash               |
 | SPIFFS/SD full or write fail  | Fast flashing red                         |
 
-**Note:** All LED sequences are customizable in the firmware ([flight-computer/led.cpp](https://github.com/zerneo85/ESP-Controlled-Rocket/flight-computer/led.cpp)).
+**Note:** All LED sequences are customizable in the firmware.
 
 ---
 
@@ -187,7 +187,7 @@ See [`flight-computer/flight-computer.ino`](https://github.com/zerneo85/ESP-Cont
 
 All 3D-printable parts for the ESP Controlled Rocket are available:
 
-- **Repository:** [`/3d-designs/`](3d-designs/) – STL files with exact filenames as listed
+- **Repository:** [`/3d-designs/`](https://github.com/zerneo85/ESP-Controlled-Rocket/3d-designs/) – STL files with exact filenames as listed
 - **Tinkercad Project:** [Soda Water Bottle Rocket Air Pressure](https://www.tinkercad.com/things/2OLB51qPn6D-soda-bottle-rocket-air-pressure?sharecode=rF4dOlGs_3UIkk9-KeF3I1006FAJQaIejBceTLLDq_E)  
   *(note: transparent parts represent older versions)*
 - **Thingiverse:** [Soda Water Bottle Rocket Air Pressure](https://www.thingiverse.com/thing:7127173)
