@@ -172,13 +172,13 @@ See [`flight-computer/flight-computer.ino`](https://github.com/zerneo85/ESP-Cont
 ### Screenshots
 
 #### Dashboard, File Manager, and Visualization
-![All dashboards video](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/all_dashboards.gif)  
-![Flight Computer Screenshot](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/flight_computer_dashboard_0.png)  
-![File Manager Screenshot](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/filemanager_dashboard_1.png)  
-![Visualization Screenshot](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/visualization_dashboard_1.png)  
-![Impression A](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/impression_a.jpeg) 
-![Impression E](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/impression_e.jpeg) 
-![Payload Parachute Release Video](https://github.com/zerneo85/ESP-Controlled-Rocket/tree/main/media/Payload_Parachute_Release.gif)  
+![All dashboards video](/media/all_dashboards.gif)  
+![Flight Computer Screenshot](/media/flight_computer_dashboard_0.png)  
+![File Manager Screenshot](/media/filemanager_dashboard_1.png)  
+![Visualization Screenshot](/media/visualization_dashboard_1.png)  
+![Impression A](/media/impression_a.jpeg) 
+![Impression E](/media/impression_e.png)  
+![Payload Parachute Release Video](/media/Payload_Parachute_Release.gif)  
 
 ---
 
