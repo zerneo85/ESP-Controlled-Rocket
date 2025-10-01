@@ -1,0 +1,22 @@
+Ref,Value,Symbol,Notes
+U1,L7805,Regulator_Linear:L7805,TO-220 or TO-252
+F1,2A Resettable Fuse,Device:Polyfuse,1206
+D1,SS14 Schottky,Device:D_Schottky,SMA
+U2,BMP280,Sensor_Pressure:BMP280,Use BMP388/DPS310 if preferred
+U3,MPU6050,Sensor_Motion:MPU-6050,Use ICM-42688-P if preferred
+R_SDA,4.7k,Device:R,Pull-up to 3V3
+R_SCL,4.7k,Device:R,Pull-up to 3V3
+R5,330,Device:R,Series on LED data
+CIN1,10uF,Device:C,Input to L7805
+CIN2,100nF,Device:C,Input to L7805
+COUT1,10uF,Device:C,Output of L7805
+COUT2,100nF,Device:C,Output of L7805
+C_LED,470uF,Device:CP,Across LED pads
+Q1,2N7002,Device:Q_NMOS_GSD,or MMBT2222A NPN
+R4,1k,Device:R,Gate/Base resistor
+BZ1,Active 5V Buzzer,Buzzer_Beeper:MagneticBuzzer,12mm THT recommended
+J1,Conn_01x02,Connector_Generic:Conn_01x02,Battery IN
+J2,Conn_01x19,Connector_Generic:Conn_01x19,ESP32-S3 left header
+J3,Conn_01x19,Connector_Generic:Conn_01x19,ESP32-S3 right header
+J4,Conn_01x03,Connector_Generic:Conn_01x03,LED OUT (+5V/Data/GND)
+J5,Conn_01x03,Connector_Generic:Conn_01x03,Servo (+5V/PWM/GND)

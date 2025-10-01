@@ -130,7 +130,7 @@ extern "C" {
 // -----------------------
 // #include "Freenove_WS2812_Lib_for_ESP32.h"
 #include <Adafruit_NeoPixel.h>
-#define LEDS_COUNT 41  // Number of LEDs in the strip
+#define LEDS_COUNT 39  // Number of LEDs in the strip
 #define LEDS_PIN 17    // GPIO pin for the LED strip data line
 #define CHANNEL 0      // PWM channel (if applicable)
 //Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
@@ -184,9 +184,9 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "XXXXXX";  // Anonymized API key
-float currentLatitude = 52.02523004349591;                              // Anonymized Latitude
-float currentLongitude = 4.25483383178711;                              // Anonymized Longitude
+const char *openWeatherMapApiKey = "XXXXXXXXXX";  // Anonymized API key
+float currentLatitude = 51.07741431;                              // Anonymized Latitude
+float currentLongitude = 5.88510756;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 
@@ -747,7 +747,7 @@ void parachuteRelease() {
 //  }
 
   for (int i = 0; i < 2; i++) {
-    parachuteservo.write(180);
+    parachuteservo.write(0);
   }
   parachuteStatus = "released";
   blinkColor(greenColor, 5, 100);
@@ -794,7 +794,7 @@ void parachuteArmed() {
   minRelativeAltitude = 1000000.0;
   maxAltitudeDrop = 0;
   minAltitudeDrop = 1000000.0;
-  parachuteservo.write(0);
+  parachuteservo.write(180);
   parachuteStatus = "armed";
 
   if (alreadyWarned) {

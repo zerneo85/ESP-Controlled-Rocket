@@ -1,0 +1,19 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "bfea5218-77b3-4d68-ae9d-839b3d3bf06e")
+	(paper "A4")
+	(title_block
+		(title "Flight Computer PCB")
+		(date "2025-09-13")
+		(rev "0")
+	)
+	(lib_symbols)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

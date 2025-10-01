@@ -1,0 +1,81 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "39c78242-fd32-4cae-9f4f-a5b136d2009a")
+	(paper "A4")
+	(title_block
+		(title "ESP Rocket Shield")
+		(rev "A")
+		(company "ZerNeo / ESP Controlled Rocket")
+	)
+	(lib_symbols)
+	(symbol
+		(lib_id "power:GND")
+		(at 40 170 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "2aa6fac3-cf6a-4b6b-a801-357979c7fc88")
+		(property "Reference" "#PWR?"
+			(at 40 168 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 40 172 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 40 170 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 40 170 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 40 170 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "e3fdd463-01d5-2ac5-af0d-a1d736e6ef27")
+		)
+		(instances
+			(project "ESP_Rocket_Shield"
+				(path "/39c78242-fd32-4cae-9f4f-a5b136d2009a"
+					(reference "#PWR?")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

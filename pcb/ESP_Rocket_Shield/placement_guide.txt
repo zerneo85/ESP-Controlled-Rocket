@@ -1,0 +1,8 @@
+Placement Guide (suggested):
+- Power section (J1, F1, D1, U1, big caps) along LEFT edge for airflow and heatsinking.
+- ESP32 female headers centered; ensure clearance for USB and buttons on the dev board.
+- Sensors (U2 baro, U3 IMU) in the middle; keep-out for high current/noise; add vent hole under baro.
+- Buzzer (BZ1) on RIGHT edge, away from sensors; keep return path tight.
+- LED pads (J4) near a board edge with 330R (R5) placed at the edge; large electrolytic (C_LED) next to pads.
+- Servo header (J5) at an accessible edge.
+- Mounting holes at four corners are included in PCB Edge.Cuts; adjust for your airframe.

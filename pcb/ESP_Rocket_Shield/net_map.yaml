@@ -1,0 +1,26 @@
+nets:
+  power:
+    - VIN
+    - VIN_PROT
+    - +5V
+    - +3V3
+    - GND
+  signals:
+    - SDA (ESP32 GPIO42)
+    - SCL (ESP32 GPIO37)
+    - LED_DATA (ESP32 GPIO17)
+    - LED_DATA_OUT (to LED pad)
+    - BUZZ (ESP32 GPIO21)
+    - SERVO_PWM (ESP32 GPIO14)
+connections:
+  - J1.1 -> VIN
+  - F1 -> series on VIN
+  - D1 -> VIN_PROT
+  - U1.IN -> VIN_PROT
+  - U1.OUT -> +5V
+  - U1.GND -> GND
+  - ESP32 headers bring: 5V, 3V3, GND, GPIO17, GPIO37, GPIO42, GPIO21, GPIO14
+  - I2C pull-ups R_SDA/R_SCL to +3V3
+  - LED: GPIO17 -> R5 -> LED_DATA_OUT; J4: +5V, LED_DATA_OUT, GND
+  - Buzzer: GPIO21 -> R4 -> Q1 gate; BZ1+ -> +5V, BZ1- -> Q1 drain; Q1 source -> GND
+  - Servo: J5 +5V, SERVO_PWM, GND
