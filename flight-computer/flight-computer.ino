@@ -184,7 +184,7 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "XXXXXXXXXX";  // Anonymized API key
+const char *openWeatherMapApiKey = "xxxxxx";  // Anonymized API key
 float currentLatitude = 51.07741431;                              // Anonymized Latitude
 float currentLongitude = 5.88510756;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
@@ -1480,11 +1480,11 @@ void setup() {
   });
 
   // Serve static dashboard files from SPIFFS
-  server.serveStatic("/", SPIFFS, "/index.html");  // This will serve /index.html for root
+ // server.serveStatic("/", SPIFFS, "/index.html");  // This will serve /index.html for root
   server.serveStatic("/index.html", SPIFFS, "/index.html");
   server.serveStatic("/style.css", SPIFFS, "/style.css");
   server.serveStatic("/script.js", SPIFFS, "/script.js");
-  server.begin();
+
 
   server.on("/spiffsupload", HTTP_GET, []() {
     server.send_P(200, "text/html", spiffsUploaderHTML);
@@ -1494,6 +1494,9 @@ void setup() {
       server.send(200, "text/plain", "Upload complete! Refresh to upload more files.");
     },
     handleSpiffsUpload);
+
+
+  server.begin();
 
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
