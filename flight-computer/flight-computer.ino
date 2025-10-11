@@ -185,7 +185,7 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "";  // Anonymized API key
+const char *openWeatherMapApiKey = "4ebe45a774a5b74364992dc2f83fc597";  // Anonymized API key
 float currentLatitude = 51.07741431;                              // Anonymized Latitude
 float currentLongitude = 5.88510756;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
