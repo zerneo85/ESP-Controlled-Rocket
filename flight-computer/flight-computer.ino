@@ -141,7 +141,7 @@ Adafruit_NeoPixel strip(LEDS_COUNT, LEDS_PIN, NEO_GRB + NEO_KHZ800);
 // -----------------------
 #define EEPROM_SIZE 10                   // EEPROM size
 #define EEPROM_PRESSURE_ADDR 0           // EEPROM address for storing pressure
-const size_t MAX_SPIFFS_USED_KB = 1000;  // Set your preferred limit (in KB)
+const size_t MAX_SPIFFS_USED_KB = 700;  // Set your preferred limit (in KB)
 bool spiffsLoggingAllowed = false;
 bool alreadyWarned = false;
 bool apiSuccess = false;
@@ -160,6 +160,7 @@ bool enAccZ = true;
 
 
 
+bool enApogee = true;
 // SD card storage info
 uint64_t totalSpace;
 uint64_t usedSpace;
@@ -184,7 +185,7 @@ const char *apPassword = "Rocket2022!";
 // -----------------------
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
-const char *openWeatherMapApiKey = "XXXXXXXXXX";  // Anonymized API key
+const char *openWeatherMapApiKey = "";  // Anonymized API key
 float currentLatitude = 51.07741431;                              // Anonymized Latitude
 float currentLongitude = 5.88510756;                              // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
@@ -203,15 +204,36 @@ unsigned long lastSyncMillis = 0;
 // Trigger & Calibration Variables for Parachute Operation
 // -----------------------
 float altitudeDropThreshold = 0.8;
-float accXThreshold = 15.0;
-float accYThreshold = 15.0;
-float accZThreshold = 15.0;
+float accXThreshold = 8.0;
+float accYThreshold = 8.0;
+float accZThreshold = 8.0;
 bool useAndLogic = false;  // If true, all conditions must meet; if false, any condition triggers
 
 // Baseline for altitude and parachute status variables
 float baselineAltitude = 0;
 bool baselineCaptured = false;
+
+// --- Altitude filtering & apogee detection additions ---
+float ALT_EWMA_ALPHA = 0.20f;
+float filteredRelAlt = 0.0f;
+float prevFilteredRelAlt = 0.0f;
+float verticalSpeed = 0.0f;          // m/s
+unsigned long lastAltUpdateMs = 0;
+
+bool apogeeDetected = false;
+float apogeeAltitude = 0.0f;
+unsigned long apogeeMillis = 0;
+int negVsCount = 0;
+
+float MIN_ALTITUDE_FOR_APOGEE = 5.0f;   // meters (tune)
+float NEG_VS_CONFIRM = -0.20f;          // m/s (tune)
+int NEG_COUNT_CONFIRM = 5;              // consecutive samples (tune)
+
+float LAUNCH_ACC_THRESHOLD = 15.0f;     // m/s^2 (tune)
+unsigned long groundCandidateSince = 0;
+unsigned long GROUND_SETTLE_MS = 2000;
 String parachuteStatus = "unarmed";
+String rocketStatus = "On Launchpad";
 String parachutePreStatus = "unknown";
 
 // Logging extremes for altitude values
@@ -709,25 +731,41 @@ void updatePressureFromAPI() {
 // Check SPIFF Space and warn
 // ---------------------------------------------------------------------------
 void checkSpiffsSpaceAndWarn() {
-  size_t spiffsUsedKB = SPIFFS.usedBytes() / 1024;
+  size_t spiffsUsedKB  = SPIFFS.usedBytes() / 1024;
+  size_t spiffsTotalKB = SPIFFS.totalBytes() / 1024;
 
   if (spiffsUsedKB >= MAX_SPIFFS_USED_KB) {
-    if (!alreadyWarned) {
-      animateWarningPatternLEDs();
-      Serial.printf("SPIFFS used: %u KB (limit: %u KB). Logging naar SPIFFS wordt uitgeschakeld.\n", (unsigned)spiffsUsedKB, (unsigned)MAX_SPIFFS_USED_KB);
-      alreadyWarned = true;
+    // 1) visueel signaal
+    blinkColor(redColor, 10, 100);
+
+    // 2) kopieer huidige SPIFFS-log naar SD met duidelijke naam
+    if (SPIFFS.exists("/log.csv")) {
+      String ts = getTimeStampString();   // "YYYY-MM-DD_HHMMSS" na replace
+      ts.replace(":", ""); ts.replace(" ", "_");
+      String dst = "/SPIFFS_COPY_" + ts + ".csv";
+
+      bool ok = copyFileFS(SPIFFS, "/log.csv", SD_MMC, dst.c_str());
+      Serial.printf("SPIFFS log copied to SD %s: %s\n", dst.c_str(), ok ? "OK" : "FAIL");
+
+      // 3) SPIFFS-log roteren: remove + nieuwe lege met header
+      if (ok) {
+        SPIFFS.remove("/log.csv");
+        ensureLogFileHasHeader(SPIFFS, "/log.csv");
+      }
     }
-    spiffsLoggingAllowed = false;
-  } else {
-    if (alreadyWarned) {
-      setAllLEDs(blueColor);
-      parachuteStatus = "unarmed";
-      Serial.println("SPIFFS heeft weer voldoende ruimte, logging wordt hervat.");
-      alreadyWarned = false;
-    }
+
+    // 4) na rotatie gewoon weer doorloggen op SPIFFS
     spiffsLoggingAllowed = true;
+    alreadyWarned = false;              // warning is afgehandeld; niet aan laten staan
+    setAllLEDs(blueColor);              // terug naar normale kleur
+    return;
   }
+
+  // onder de drempel → normaal loggen
+  spiffsLoggingAllowed = true;
+  alreadyWarned = false;
 }
+
 
 
 
@@ -796,6 +834,10 @@ void parachuteArmed() {
   minAltitudeDrop = 1000000.0;
   parachuteservo.write(180);
   parachuteStatus = "armed";
+  rocketStatus = "On Launchpad";
+  apogeeDetected = false;
+  apogeeAltitude = 0.0f;
+  negVsCount = 0;
 
   if (alreadyWarned) {
     setWarningPatternLEDs();  // Or animateWarningPatternLEDs();
@@ -855,7 +897,7 @@ void ensureLogFileHasHeader(fs::FS &fs, const char *path) {
     // Bestaat niet: header toevoegen
     File f = fs.open(path, FILE_WRITE);
     if (f) {
-      f.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
+      f.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee");
       f.close();
     }
   } else {
@@ -866,7 +908,7 @@ void ensureLogFileHasHeader(fs::FS &fs, const char *path) {
       // Voeg alsnog headers toe
       File fw = fs.open(path, FILE_WRITE);
       if (fw) {
-        fw.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
+        fw.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee");
         fw.close();
       }
     } else if (f) {
@@ -880,6 +922,83 @@ void ensureLogFileHasHeader(fs::FS &fs, const char *path) {
 // ---------------------------------------------------------------------------
 // WebSocket Event Handler for real-time communication with the client dashboard
 // ---------------------------------------------------------------------------
+
+void sendTelemetrySnapshot(float absoluteAltitude, float relativeAltitude, float altitudeDrop,
+                           float bmpTemp, float pressure,
+                           float rawAccX, float rawAccY, float rawAccZ,
+                           float relAccX, float relAccY, float relAccZ,
+                           float mpuTemp,                 // << toegevoegd
+                           sensors_event_t &g, float spiffsTotal, float spiffsUsed) {
+  String jsonString = "";
+  StaticJsonDocument<800> doc;
+  JsonObject object = doc.to<JsonObject>();
+
+  object["AbsoluteAltitude"] = absoluteAltitude;
+  object["RelativeAltitude"] = relativeAltitude;
+  object["AltitudeDrop"] = altitudeDrop;
+  object["MaxAltDrop"] = maxAltitudeDrop;
+  object["MinAltDrop"] = minAltitudeDrop;
+  object["BMP280Temp"] = bmpTemp;
+  object["BMP280Pressure"] = pressure;
+
+  // Gebruik de parameter i.p.v. 'temp.temperature'
+  object["MPU6050Temp"] = mpuTemp;
+
+  object["RawAccX"] = rawAccX;
+  object["RawAccY"] = rawAccY;
+  object["RawAccZ"] = rawAccZ;
+  object["AccX"] = relAccX;
+  object["AccY"] = relAccY;
+  object["AccZ"] = relAccZ;
+
+  float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
+  float corrGx, corrGy, corrGz;
+  correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
+  object["Gyroscope"] = String(corrGx) + "; " + String(corrGy) + "; " + String(corrGz);
+
+  object["ParachuteStatus"] = parachuteStatus;
+  object["LocalPressure"] = lastLocalPressure;
+  object["DefaultSeaLevelPressure"] = 1013.25;
+  object["PressureSource"] = PressureSource;
+  object["MaxAbsAltitude"] = maxAbsoluteAltitude;
+  object["MinAbsAltitude"] = minAbsoluteAltitude;
+  object["MaxRelAltitude"] = maxRelativeAltitude;
+  object["MinRelAltitude"] = minRelativeAltitude;
+  object["AltDropThreshold"] = altitudeDropThreshold;
+  object["AccXThreshold"] = accXThreshold;
+  object["AccYThreshold"] = accYThreshold;
+  object["AccZThreshold"] = accZThreshold;
+  object["TriggerLogic"] = useAndLogic ? "AND" : "OR";
+  object["TotalSpace"] = totalSpace;
+  object["UsedSpace"] = usedSpace;
+  object["SPIFFSTotalSpace"] = spiffsTotal;
+  object["SPIFFSUsedSpace"] = spiffsUsed;
+  object["Latitude"] = currentLatitude;
+  object["Longitude"] = currentLongitude;
+  object["SensorModeFlight"] = sensorModeFlight;
+  object["Axis Config"] = axisConfig;
+  object["SpiffsWarning"] = alreadyWarned;
+  object["SensorsCalibrated"] = sensorsCalibrated;
+  object["SensorsCalibWarning"] = !sensorsCalibrated;
+  object["TriggeredBy"] = triggeredBy;
+
+  // Nieuw toegevoegde velden
+  object["VerticalSpeed"] = verticalSpeed;
+  object["FilteredRelAlt"] = filteredRelAlt;
+  object["ApogeeDetected"] = apogeeDetected;
+  object["ApogeeAltitude"] = apogeeAltitude;
+  object["RocketStatus"] = rocketStatus;
+  object["ApogeeTriggerEnabled"] = enApogee;
+object["LaunchAccThreshold"] = LAUNCH_ACC_THRESHOLD;
+object["MinApogeeAlt"]       = MIN_ALTITUDE_FOR_APOGEE;
+object["NegVsConfirm"]       = NEG_VS_CONFIRM;
+object["NegCountConfirm"]    = NEG_COUNT_CONFIRM;
+object["GroundSettleMs"]     = GROUND_SETTLE_MS;
+
+  serializeJson(doc, jsonString);
+  webSocket.broadcastTXT(jsonString);
+}
+
 void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
@@ -937,6 +1056,44 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             enAccZ = doc["enAccZ"];
             Serial.printf("Enable AccZ Trigger: %s\n", enAccZ ? "Yes" : "No");
           }
+          if (doc.containsKey("enApogee")) {
+            enApogee = doc["enApogee"];
+            Serial.printf("Enable Apogee Trigger: %s\n", enApogee ? "Yes" : "No");
+          }
+
+// --- Nieuwe drempel-instellingen vanuit de UI ---
+if (doc.containsKey("minApogeeAlt")) {
+  MIN_ALTITUDE_FOR_APOGEE = doc["minApogeeAlt"].as<float>();
+  Serial.printf("MIN_ALTITUDE_FOR_APOGEE = %.2f\n", MIN_ALTITUDE_FOR_APOGEE);
+}
+if (doc.containsKey("negVsConfirm")) {
+  NEG_VS_CONFIRM = doc["negVsConfirm"].as<float>();
+  Serial.printf("NEG_VS_CONFIRM = %.3f\n", NEG_VS_CONFIRM);
+}
+if (doc.containsKey("negCountConfirm")) {
+  NEG_COUNT_CONFIRM = doc["negCountConfirm"].as<int>();
+  Serial.printf("NEG_COUNT_CONFIRM = %d\n", NEG_COUNT_CONFIRM);
+}
+if (doc.containsKey("launchAccThreshold")) {
+  LAUNCH_ACC_THRESHOLD = doc["launchAccThreshold"].as<float>();
+  Serial.printf("LAUNCH_ACC_THRESHOLD = %.2f\n", LAUNCH_ACC_THRESHOLD);
+}
+if (doc.containsKey("groundSettleMs")) {
+  GROUND_SETTLE_MS = doc["groundSettleMs"].as<unsigned long>();
+  Serial.printf("GROUND_SETTLE_MS = %lu\n", (unsigned long)GROUND_SETTLE_MS);
+}
+
+// Stuur de actuele waarden meteen terug naar de UI zodat velden syncen
+{
+  StaticJsonDocument<128> ack;
+  ack["LaunchAccThreshold"] = LAUNCH_ACC_THRESHOLD;
+  ack["MinApogeeAlt"]       = MIN_ALTITUDE_FOR_APOGEE;
+  ack["NegVsConfirm"]       = NEG_VS_CONFIRM;
+  ack["NegCountConfirm"]    = NEG_COUNT_CONFIRM;
+  ack["GroundSettleMs"]     = GROUND_SETTLE_MS;
+  String s; serializeJson(ack, s);
+  webSocket.broadcastTXT(s);
+}
 
 
           if (doc.containsKey("newTriggerLogic")) {
@@ -955,11 +1112,23 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             Serial.println("Sensors calibrated.");
           }
           // Handle axis configuration update from the web interface
+          if (doc.containsKey("sensorModeFlight")) {
+            sensorModeFlight = doc["sensorModeFlight"];
+            Serial.printf("SensorModeFlight: %s\n", sensorModeFlight ? "ON" : "OFF");
+          }
           if (doc.containsKey("axisConfig")) {
             axisConfig = doc["axisConfig"];
             Serial.print("Axis configuration updated to: ");
             Serial.println(axisConfig);
           }
+          // ---- Rocket-status / apogee thresholds instellen via UI ----
+if (doc.containsKey("minApogeeAlt"))        MIN_ALTITUDE_FOR_APOGEE = doc["minApogeeAlt"];
+if (doc.containsKey("negVsConfirm"))        NEG_VS_CONFIRM          = doc["negVsConfirm"];
+if (doc.containsKey("negCountConfirm"))     NEG_COUNT_CONFIRM       = doc["negCountConfirm"];
+if (doc.containsKey("launchAccThreshold"))  LAUNCH_ACC_THRESHOLD    = doc["launchAccThreshold"];
+if (doc.containsKey("groundSettleMs"))      GROUND_SETTLE_MS        = doc["groundSettleMs"];
+
+
           const char *command = doc["parachute"];
           Serial.println("Received parachute command from client " + String(num));
           if (String(command) == "Armed" && parachuteStatus != "armed") {
@@ -972,6 +1141,10 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
             parachuteUnarmed();
             Serial.println("Parachute unarmed command processed.");
           }
+          if (doc.containsKey("request") && String(doc["request"])=="telemetry") {
+            // One-shot snapshot is handled by main loop publishing shortly after
+          }
+
           // NEW: handle location updates
           if (doc.containsKey("latitude") && doc.containsKey("longitude")) {
             currentLatitude = doc["latitude"];
@@ -1192,13 +1365,13 @@ void setup() {
     Serial.println("SPIFFS mounted successfully");
   }
 
-  ensureLogFileHasHeader(SD_MMC, "/log.csv");
+
   ensureLogFileHasHeader(SPIFFS, "/log.csv");
 
   if (!SPIFFS.exists("/log.csv")) {
     File spiffsFile = SPIFFS.open("/log.csv", FILE_WRITE);
     if (spiffsFile) {
-      spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
+      spiffsFile.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee");
       spiffsFile.close();
     }
   }
@@ -1267,6 +1440,7 @@ void setup() {
   if (!SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5)) {
     Serial.println("Card Mount Failed");
   } else {
+    ensureLogFileHasHeader(SD_MMC, "/log.csv");   // now the SD is mounted
     Serial.println("SD Card initialized.");
     String oldLogFile = "/log.csv";
     String timestamp = getTimeStampString();
@@ -1287,7 +1461,7 @@ void setup() {
     }
     File file = SD_MMC.open(oldLogFile.c_str(), FILE_WRITE);
     if (file) {
-      file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ");
+      file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee");
       file.close();
     }
   }
@@ -1540,6 +1714,20 @@ void loop() {
 
   // Altitude & drops
   float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
+  // --- Filtered altitude + vertical speed ---
+  unsigned long _nowAltMs = millis();
+  if (lastAltUpdateMs == 0) {
+    filteredRelAlt = relativeAltitude;
+    prevFilteredRelAlt = relativeAltitude;
+    lastAltUpdateMs = _nowAltMs;
+  }
+  float _dt = (_nowAltMs - lastAltUpdateMs) / 1000.0f;
+  if (_dt <= 0.0f) _dt = 0.001f;
+  filteredRelAlt = ALT_EWMA_ALPHA * relativeAltitude + (1.0f - ALT_EWMA_ALPHA) * filteredRelAlt;
+  verticalSpeed = (filteredRelAlt - prevFilteredRelAlt) / _dt;
+  prevFilteredRelAlt = filteredRelAlt;
+  lastAltUpdateMs = _nowAltMs;
+
   if (absoluteAltitude > maxAbsoluteAltitude) maxAbsoluteAltitude = absoluteAltitude;
   if (absoluteAltitude < minAbsoluteAltitude) minAbsoluteAltitude = absoluteAltitude;
   if (relativeAltitude > maxRelativeAltitude) maxRelativeAltitude = relativeAltitude;
@@ -1547,6 +1735,41 @@ void loop() {
   float altitudeDrop = (parachuteStatus == "armed") ? armedMaxRelativeAltitude - relativeAltitude : maxRelativeAltitude - relativeAltitude;
   if (altitudeDrop > maxAltitudeDrop) maxAltitudeDrop = altitudeDrop;
   if (altitudeDrop < minAltitudeDrop) minAltitudeDrop = altitudeDrop;
+
+  // --- Rocket status & apogee detection ---
+  // Launch detection (use Z-up calibrated acceleration)
+  if (rocketStatus == "On Launchpad" && relAccZ > LAUNCH_ACC_THRESHOLD) {
+    rocketStatus = "Launched";
+    apogeeDetected = false;
+    apogeeAltitude = 0.0f;
+    negVsCount = 0;
+  }
+
+  // Apogee detection (requires sufficient altitude and sustained negative vertical speed)
+  if (!apogeeDetected && filteredRelAlt > MIN_ALTITUDE_FOR_APOGEE) {
+    if (verticalSpeed < NEG_VS_CONFIRM) {
+      negVsCount++;
+      if (negVsCount >= NEG_COUNT_CONFIRM) {
+        apogeeDetected = true;
+        apogeeAltitude = filteredRelAlt;
+        apogeeMillis = millis();
+        rocketStatus = "Max Apogee";
+      }
+    } else {
+      if (negVsCount > 0) negVsCount--;
+    }
+  }
+
+  // Ground detection (near zero height and speed for some time)
+  if (fabs(filteredRelAlt) < 1.0f && fabs(verticalSpeed) < 0.05f) {
+    if (groundCandidateSince == 0) groundCandidateSince = millis();
+    else if (millis() - groundCandidateSince > GROUND_SETTLE_MS) {
+      rocketStatus = "On Ground";
+    }
+  } else {
+    groundCandidateSince = 0;
+  }
+
 
   // ----------- Check trigger conditions, track TriggeredBy -----------
   triggeredBy = "NotTriggered";
@@ -1558,21 +1781,22 @@ void loop() {
     bool triggerAccZ = enAccZ ? (triggerAbs ? (fabs(relAccZ) >= accZThreshold) : (relAccZ >= accZThreshold)) : false;
 
     // Build triggers array for generic AND/OR logic
-    bool triggers[] = { triggerAlt, triggerAccX, triggerAccY, triggerAccZ };
+    bool triggerApogee = enApogee ? apogeeDetected : false;
+    bool triggers[] = { triggerAlt, triggerAccX, triggerAccY, triggerAccZ, triggerApogee };
 
     // Check which are enabled for logic
-    bool enabled[] = { enAltDrop, enAccX, enAccY, enAccZ };
-    bool anyEnabled = enAltDrop || enAccX || enAccY || enAccZ;
+    bool enabled[] = { enAltDrop, enAccX, enAccY, enAccZ, enApogee };
+    bool anyEnabled = enAltDrop || enAccX || enAccY || enAccZ || enApogee;
 
     bool triggerCondition = false;
     if (anyEnabled) {
       if (useAndLogic) {
         triggerCondition = true;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
           if (enabled[i] && !triggers[i]) triggerCondition = false;
         }
       } else {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
           if (enabled[i] && triggers[i]) triggerCondition = true;
         }
       }
@@ -1585,6 +1809,7 @@ void loop() {
       if (triggerAccX) triggersList += "Threshold AccX,";
       if (triggerAccY) triggersList += "Threshold AccY,";
       if (triggerAccZ) triggersList += "Threshold AccZ,";
+      if (triggerApogee) triggersList += "Apogee Descent,";
       if (triggersList.length() > 0) triggersList.remove(triggersList.length() - 1);
       triggeredBy = triggersList;
       lastTriggeredBy = triggersList;
@@ -1674,40 +1899,47 @@ void loop() {
     Serial.println("--------------------");
   }
 
-  // --- LOG FORMAT (add all extra columns) ---
-  char dataString[700];
-  String currentTimestamp = getTimeStampString();
+ // --- LOG FORMAT (add all extra columns) ---
+char dataString[700];
+String currentTimestamp = getTimeStampString();
 
-snprintf(dataString, sizeof(dataString),
-    "%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,1013.25,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,\"%s\",%d,%d,%d,%d\n",
-    currentTimestamp.c_str(),      // Timestamp (zonder quotes)
-    bmpTemp,
-    pressure,
-    absoluteAltitude,
-    relativeAltitude,
-    altitudeDrop,
-    temp.temperature,
-    rawAccX, rawAccY, rawAccZ,
-    relAccX, relAccY, relAccZ,
-    g.gyro.x, g.gyro.y, g.gyro.z,
-    parachuteStatus.c_str(),
-    lastLocalPressure,
-    PressureSource.c_str(),
-    maxAbsoluteAltitude, minAbsoluteAltitude,
-    maxRelativeAltitude, minRelativeAltitude,
-    maxAltitudeDrop, minAltitudeDrop,
-    totalSpace, usedSpace,
-    spiffsTotal, spiffsUsed,
-    currentLatitude, currentLongitude,
-    altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
-    useAndLogic ? "AND" : "OR",
-    axisConfig,
-    triggeredBy.c_str(),   // ← alleen deze tussen dubbele quotes!
-    enAltDrop ? 1 : 0,
-    enAccX ? 1 : 0,
-    enAccY ? 1 : 0,
-    enAccZ ? 1 : 0
+snprintf(
+  dataString, sizeof(dataString),
+  "%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,1013.25,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,\"%s\",%d,%d,%d,%d,%.3f,%s,%d,%.2f,%d\n",
+  currentTimestamp.c_str(),      // Timestamp
+  bmpTemp,
+  pressure,
+  absoluteAltitude,
+  relativeAltitude,
+  altitudeDrop,
+  temp.temperature,
+  rawAccX, rawAccY, rawAccZ,
+  relAccX, relAccY, relAccZ,
+  g.gyro.x, g.gyro.y, g.gyro.z,
+  parachuteStatus.c_str(),
+  lastLocalPressure,
+  PressureSource.c_str(),
+  maxAbsoluteAltitude, minAbsoluteAltitude,
+  maxRelativeAltitude, minRelativeAltitude,
+  maxAltitudeDrop, minAltitudeDrop,
+  totalSpace, usedSpace,
+  spiffsTotal, spiffsUsed,
+  currentLatitude, currentLongitude,
+  altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
+  useAndLogic ? "AND" : "OR",
+  axisConfig,
+  triggeredBy.c_str(),   // ← met quotes in CSV
+  enAltDrop ? 1 : 0,
+  enAccX ? 1 : 0,
+  enAccY ? 1 : 0,
+  enAccZ ? 1 : 0,
+  verticalSpeed,
+  rocketStatus.c_str(),
+  apogeeDetected ? 1 : 0,
+  apogeeAltitude,
+  enApogee ? 1 : 0
 );
+
 
 
   checkSpiffsSpaceAndWarn();
@@ -1732,7 +1964,7 @@ snprintf(dataString, sizeof(dataString),
       object["MinAltDrop"] = minAltitudeDrop;
       object["BMP280Temp"] = bmpTemp;
       object["BMP280Pressure"] = pressure;
-      object["MPU6050Temp"] = temp.temperature;
+object["MPU6050Temp"] = temp.temperature;  // GOED
       object["RawAccX"] = rawAccX;
       object["RawAccY"] = rawAccY;
       object["RawAccZ"] = rawAccZ;
@@ -1768,6 +2000,24 @@ snprintf(dataString, sizeof(dataString),
       object["SensorsCalibrated"] = sensorsCalibrated;
       object["SensorsCalibWarning"] = !sensorsCalibrated;
       object["TriggeredBy"] = triggeredBy;
+      object["VerticalSpeed"] = verticalSpeed;
+      object["FilteredRelAlt"] = filteredRelAlt;
+      object["ApogeeDetected"] = apogeeDetected;
+      object["ApogeeAltitude"] = apogeeAltitude;
+      object["RocketStatus"] = rocketStatus;
+      object["ApogeeTriggerEnabled"] = enApogee;
+      object["LaunchAccThreshold"] = LAUNCH_ACC_THRESHOLD;
+object["MinApogeeAlt"]       = MIN_ALTITUDE_FOR_APOGEE;
+object["NegVsConfirm"]       = NEG_VS_CONFIRM;
+object["NegCountConfirm"]    = NEG_COUNT_CONFIRM;
+object["GroundSettleMs"]     = GROUND_SETTLE_MS;
+
+      object["LaunchAccThreshold"] = LAUNCH_ACC_THRESHOLD;
+object["MinApogeeAlt"]       = MIN_ALTITUDE_FOR_APOGEE;
+object["NegVsConfirm"]       = NEG_VS_CONFIRM;
+object["NegCountConfirm"]    = NEG_COUNT_CONFIRM;
+object["GroundSettleMs"]     = (int)GROUND_SETTLE_MS;
+
       serializeJson(doc, jsonString);
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;

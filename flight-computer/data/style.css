@@ -229,3 +229,46 @@ input.long-number {
     width: 105px;
   }
 }
+
+/* --- Status thresholds rij --- */
+.status-thresholds {
+  margin-top: 10px;                   /* vervangt inline style */
+}
+
+/* Elk label gedraagt zich als een mini "chip" met nette uitlijning */
+.status-thresholds label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: #f9fbff;
+  border: 1px solid #c9d6ea;
+  border-radius: 6px;
+  margin: 2px 6px;                    /* kleine afstand tussen velden */
+}
+
+/* Inputs in deze rij net wat breder voor leesbaarheid */
+.status-thresholds input[type="number"] {
+  width: 90px;
+  min-width: 70px;
+  padding: 6px 8px;
+}
+
+/* Specifieke breedtes waar nodig */
+#launchAccThreshold { width: 100px; }
+#groundSettleMs     { width: 110px; }
+
+/* De knop op dezelfde hoogte en met iets ruimte */
+.status-thresholds button {
+  height: 36px;
+  line-height: 36px;
+  padding: 0 14px;
+  margin-left: 8px;
+}
+
+/* Globale kleine fix: checkboxes netter alignen met tekst */
+.controls-row input[type='checkbox'] {
+  position: relative;
+  top: 1px;
+  transform: none;
+}

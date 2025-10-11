@@ -4,7 +4,7 @@
 <head>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <title>Flight Computer</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css"> 
 </head>
 
 <body>
@@ -31,6 +31,18 @@
       <tr>
         <td>Relative Altitude</td>
         <td id='RelativeAltitude'>-</td>
+      </tr>
+      <tr>
+        <td>Vertical Speed (m/s)</td>
+        <td id='VerticalSpeed'>-</td>
+      </tr>
+      <tr>
+        <td>Apogee Detected</td>
+        <td id='ApogeeDetected'>-</td>
+      </tr>
+      <tr>
+        <td>Apogee Altitude</td>
+        <td id='ApogeeAltitude'>-</td>
       </tr>
       <tr>
         <td>Altitude Drop</td>
@@ -135,6 +147,15 @@
         <td id='ParachuteStatus'>-</td>
       </tr>
       <tr>
+        <td>Rocket Status</td>
+        <td id='RocketStatus'>-</td>
+      </tr>
+      <tr>
+        <td>Triggered By</td>
+        <td id="TriggeredBy">-</td>
+      </tr>
+
+      <tr>
         <td>Sensors Calibrated</td>
         <td id="SensorsCalibrated">-</td>
       </tr>
@@ -150,6 +171,27 @@
         <td>Acc Y Threshold</td>
         <td id='AccYThreshold'>-</td>
       </tr>
+      <tr>
+        <td>Launch Acc Threshold</td>
+        <td id="LaunchAccThreshold">-</td>
+      </tr>
+      <tr>
+        <td>Min Apogee Altitude</td>
+        <td id="MinApogeeAlt">-</td>
+      </tr>
+      <tr>
+        <td>Neg VS Confirm</td>
+        <td id="NegVsConfirm">-</td>
+      </tr>
+      <tr>
+        <td>Neg Samples Confirm</td>
+        <td id="NegCountConfirm">-</td>
+      </tr>
+      <tr>
+        <td>Ground Settle (ms)</td>
+        <td id="GroundSettleMs">-</td>
+      </tr>
+
       <tr>
         <td>Acc Z Threshold</td>
         <td id='AccZThreshold'>-</td>
@@ -201,6 +243,9 @@
     <button id="BTN_SET_LOCATION" onclick="button_update_location()">Set Location</button>
   </div>
   <div class="controls-row">
+    <input type="checkbox" id="chkApogee" checked>
+    <label for="chkApogee">Apogee trigger</label>
+
     <!-- Eerste regel: Acc X, Y, Z -->
     <input type="checkbox" id="chkAccX" unchecked>
     <label for="newAccX">Acc X:</label>
@@ -246,105 +291,27 @@
     <button onclick="button_update_axis()">Update Axis Mapping</button>
   </div>
 
- <!-- Water Rocket Performance Table (static info for reference)
-  <div style="max-width: 800px; margin: 40px auto 25px auto; font-family: Arial, sans-serif;">
-    <h2 style="text-align:center; margin-bottom: 12px;">Water Rocket Performance Table <span
-        style="font-size:0.7em; font-weight:normal;">(8 bar, realistic empty mass)</span></h2>
-    <table style="margin: 0 auto; border-collapse: collapse; min-width: 650px; background: #fff;">
-      <tr style="background:#3949ab; color:#fff;">
-        <th>Total Volume (L)</th>
-        <th>Empty Mass (g)</th>
-        <th>Water Amount (L)</th>
-        <th>Nozzle (mm)</th>
-        <th>Apogee (m)</th>
-        <th>Burnout Time (s)</th>
-        <th>Total Flight Time (s)</th>
-      </tr>
-      <tr>
-        <td>1.5</td>
-        <td>200</td>
-        <td>0.5</td>
-        <td>7</td>
-        <td>103</td>
-        <td>1.5</td>
-        <td>9.7</td>
-      </tr>
-      <tr>
-        <td>1.5</td>
-        <td>200</td>
-        <td>0.5</td>
-        <td>20</td>
-        <td>115</td>
-        <td>0.31</td>
-        <td>10.3</td>
-      </tr>
-      <tr>
-        <td>4.5</td>
-        <td>800</td>
-        <td>1.5</td>
-        <td>7</td>
-        <td>108</td>
-        <td>2.5</td>
-        <td>10.5</td>
-      </tr>
-      <tr>
-        <td>4.5</td>
-        <td>800</td>
-        <td>1.5</td>
-        <td>20</td>
-        <td>118</td>
-        <td>0.45</td>
-        <td>11.0</td>
-      </tr>
-      <tr>
-        <td>7.5</td>
-        <td>900</td>
-        <td>2.5</td>
-        <td>7</td>
-        <td>128</td>
-        <td>2.8</td>
-        <td>12.2</td>
-      </tr>
-      <tr>
-        <td>7.5</td>
-        <td>900</td>
-        <td>2.5</td>
-        <td>20</td>
-        <td>140</td>
-        <td>0.49</td>
-        <td>12.7</td>
-      </tr>
-      <tr>
-        <td>10.5</td>
-        <td>1000</td>
-        <td>3.5</td>
-        <td>7</td>
-        <td>119</td>
-        <td>2.6</td>
-        <td>11.6</td>
-      </tr>
-      <tr>
-        <td>10.5</td>
-        <td>1000</td>
-        <td>3.5</td>
-        <td>20</td>
-        <td>134</td>
-        <td>0.56</td>
-        <td>12.2</td>
-      </tr>
-    </table>
-    <ul style="margin:14px auto 0 auto; max-width:570px; color:#1a237e; font-size:1em;">
-      <li><b>Pressure:</b> 8 bar (116 psi)</li>
-      <li><b>Water amount:</b> approx. 1/3 of total volume</li>
-      <li><b>Empty mass:</b> as listed per bottle size</li>
-      <li><b>Drag coefficient:</b> 0.5</li>
-      <li><b>Nozzle 7 mm:</b> Long burn, smooth flight</li>
-      <li><b>Nozzle 20 mm:</b> Short, powerful burn, higher initial velocity</li>
-      <li>Simulated/estimated values for optimal efficiency</li>
-    </ul>
-  </div> -->
+<!-- was: <div style="margin-top:10px"> -->
+<div class="controls-row status-thresholds">
+  <label>Apogee min alt (m)
+    <input id="minApogeeAlt" type="number" step="0.1" value="5.0">
+  </label>
+  <label>Neg VS (m/s)
+    <input id="negVsConfirm" type="number" step="0.01" value="-0.20">
+  </label>
+  <label>Neg samples
+    <input id="negCountConfirm" type="number" value="5">
+  </label>
+  <label>Launch acc (m/s²)
+    <input id="launchAccThreshold" type="number" step="0.1" value="15.0">
+  </label>
+  <label>Ground settle (ms)
+    <input id="groundSettleMs" type="number" value="2000">
+  </label>
+  <button onclick="button_update_status_thresholds()">Update Status Thresholds</button>
+</div>
 
-  <script src="script.js"></script>
+
+<script src="/script.js?v=4" defer></script>
 </body>
-
 </html>
