@@ -8,7 +8,10 @@
 <body>
   <h1>File Manager</h1>
 
-  <!-- Upload knop -->
+  <!-- Optional status banner used by script.js's flash() helper -->
+  <div id="flash" class="flash"></div>
+
+  <!-- Upload -->
   <h2>Upload New Files</h2>
   <div class="centered-upload-btn">
     <a href="/spiffsupload">
@@ -16,22 +19,27 @@
     </a>
   </div>
 
-  <div class="msg" id="result"></div>
-
+    <div style="text-align:center; margin-top:24px;">
+    <a href="/"><button type="button">Back</button></a>
+  </div>
+  
   <!-- File lists -->
   <div id="file-lists">
     <h2>SD Card Files</h2>
+
+    <!-- Big danger button (single button, no nesting, no inline onclick) -->
+<div class="danger-area">
+  <button id="btn-delete-all-sd" type="button">Delete ALL files on SD</button>
+</div>
+
     <ul id="sd-list"></ul>
 
     <h2>SPIFFS Files</h2>
     <ul id="spiffs-list"></ul>
   </div>
 
-  <div style='text-align:center; margin-top:24px;'>
-    <a href='/'><button type='button'>Back</button></a>
-  </div>
 
-  <!-- Alleen script.js, geen extra scripts nodig -->
+
   <script src="script.js"></script>
 </body>
 </html>
