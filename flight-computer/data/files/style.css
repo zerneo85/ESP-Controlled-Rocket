@@ -62,3 +62,15 @@ button:hover {
   font-size: 1.1em;
   padding: 0.5em 2em;
 }
+
+.danger-area { margin: 8px 0 16px; }
+.danger-btn {
+  background: #c62828;
+  color: #fff;
+  border: 0;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.danger-btn:hover { filter: brightness(0.95); }

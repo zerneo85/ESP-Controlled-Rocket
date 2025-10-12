@@ -1,6 +1,28 @@
 #include "sd_read_write.h"
 extern bool debugSerial;  // Declaration so the sub cpp file can use it.
 
+
+// --- ADD THIS (boven gebruik) ---
+bool copyFileFS(fs::FS &srcFS, const char *srcPath, fs::FS &dstFS, const char *dstPath) {
+  File src = srcFS.open(srcPath, FILE_READ);
+  if (!src) return false;
+
+  File dst = dstFS.open(dstPath, FILE_WRITE);
+  if (!dst) { src.close(); return false; }
+
+  uint8_t buf[512];
+  size_t n;
+  while ((n = src.read(buf, sizeof(buf))) > 0) {
+    if (dst.write(buf, n) != n) { src.close(); dst.close(); return false; }
+  }
+  dst.flush();
+  src.close();
+  dst.close();
+  return true;
+}
+
+
+
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
     Serial.printf("Listing directory: %s\n", dirname);
 
