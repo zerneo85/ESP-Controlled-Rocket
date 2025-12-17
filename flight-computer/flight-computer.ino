@@ -102,7 +102,19 @@
  */
 
 //
-struct DelStats; // forward declaration so Arduino's auto-prototype knows the type
+struct DelStats;  // forward declaration so Arduino's auto-prototype knows the type
+
+// ===== Board feature switches =====
+#define FEATURE_SD_MMC 0  // 1 = Freenove with SD_MMC, 0 = standard ESP32-S3 without SD
+static bool sdMounted = false;
+
+#define FEATURE_EXTERNAL_NEOPIXEL_STRIP 0  // 1 = your 39 LED ring/strip on GPIO17
+#define FEATURE_ONBOARD_NEOPIXEL 1         // 1 = onboard RGB LED
+
+// IMPORTANT: set this to the onboard LED data pin for YOUR board.
+#ifndef ONBOARD_NEOPIXEL_PIN
+#define ONBOARD_NEOPIXEL_PIN 48  // very common on ESP32-S3 dev boards, but verify for yours
+#endif
 
 // -----------------------
 // Library Inclusions
@@ -116,13 +128,14 @@ struct DelStats; // forward declaration so Arduino's auto-prototype knows the ty
 #include <Adafruit_Sensor.h>
 // #include <Adafruit_BMP280.h>
 // #include <Adafruit_MPU6050.h>
+#if FEATURE_SD_MMC
 #include <SD_MMC.h>
+#endif
 #include "sd_read_write.h"
 #include <ESP32Servo.h>
 #include <WiFi.h>
-extern "C"
-{
-#include "esp_wifi.h" // For disabling WiFi power saving (esp_wifi_set_ps)
+extern "C" {
+#include "esp_wifi.h"  // For disabling WiFi power saving (esp_wifi_set_ps)
 }
 #include <WiFiUdp.h>
 #include <NTPClient.h>
@@ -138,32 +151,42 @@ extern "C"
 #include <math.h>
 #include <vector>
 
+
+
+
 // -----------------------
 // LED Circle Setup (Freenove_WS2812)
 // -----------------------
 // #include "Freenove_WS2812_Lib_for_ESP32.h"
 #include <Adafruit_NeoPixel.h>
-#define LEDS_COUNT 39 // Number of LEDs in the strip
-#define LEDS_PIN 17   // GPIO pin for the LED strip data line
-#define CHANNEL 0     // PWM channel (if applicable)
-// Freenove_ESP32_WS2812 strip = Freenove_ESP32_WS2812(LEDS_COUNT, LEDS_PIN, CHANNEL, TYPE_GRB);
+
+#if FEATURE_EXTERNAL_NEOPIXEL_STRIP
+#define LEDS_COUNT 39
+#define LEDS_PIN 17
+#else
+// Onboard LED: treat it as a 1-pixel NeoPixel strip
+#define LEDS_COUNT 1
+#define LEDS_PIN ONBOARD_NEOPIXEL_PIN
+#endif
+
 Adafruit_NeoPixel strip(LEDS_COUNT, LEDS_PIN, NEO_GRB + NEO_KHZ800);
+
 
 // -----------------------
 // Macro Definitions & Global Variables
 // -----------------------
-#define EEPROM_SIZE 10                 // EEPROM size
-#define EEPROM_PRESSURE_ADDR 0         // EEPROM address for storing pressure
-const size_t MAX_SPIFFS_USED_KB = 700; // Set your preferred limit (in KB)
+#define EEPROM_SIZE 10                  // EEPROM size
+#define EEPROM_PRESSURE_ADDR 0          // EEPROM address for storing pressure
+const size_t MAX_SPIFFS_USED_KB = 700;  // Set your preferred limit (in KB)
 bool spiffsLoggingAllowed = false;
 bool alreadyWarned = false;
 bool apiSuccess = false;
-bool debugSerial = false;        // Enable/disable serial debug printing
-bool sensorModeFlight = true;    // true: Flight sensor mode; false: Visualization mode
-int axisConfig = 5;              // 0 = default mapping, 1 = alternative mapping (or more states as needed)
-bool sensorsCalibrated = false;  // true when calibrated
-bool sensorsCalibWarned = false; // helper for one-time warning (optional)
-bool triggerAbs = true;          // Trigger on both positive and negative acceleration by default
+bool debugSerial = false;         // Enable/disable serial debug printing
+bool sensorModeFlight = true;     // true: Flight sensor mode; false: Visualization mode
+int axisConfig = 5;               // 0 = default mapping, 1 = alternative mapping (or more states as needed)
+bool sensorsCalibrated = false;   // true when calibrated
+bool sensorsCalibWarned = false;  // helper for one-time warning (optional)
+bool triggerAbs = true;           // Trigger on both positive and negative acceleration by default
 String lastTriggeredBy = "NotTriggered";
 String uiTriggeredBy = "NotTriggered";
 bool enAltDrop = true;
@@ -197,14 +220,14 @@ const char *apPassword = "Rocket2022!";
 // OpenWeatherMap API Settings (Anonymized)
 // -----------------------
 const char *openWeatherMapApiKey = "xxxxxx";  // Anonymized API key
-float currentLatitude = 51.07741431;                              // Anonymized Latitude
-float currentLongitude = 5.88510756;                              // Anonymized Longitude
+float currentLatitude = 51.07741431;          // Anonymized Latitude
+float currentLongitude = 5.88510756;          // Anonymized Longitude
 const char *owmEndpoint = "https://api.openweathermap.org/data/3.0/onecall";
 
 // -----------------------
 // Time Setup using NTP
 // -----------------------
-#define UTC_OFFSET_IN_SECONDS 3600 // Offset for local time zone (1 hour)
+#define UTC_OFFSET_IN_SECONDS 3600  // Offset for local time zone (1 hour)
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", UTC_OFFSET_IN_SECONDS);
 unsigned long lastSuccessfulNTP = 0;
@@ -217,7 +240,7 @@ float altitudeDropThreshold = 0.8;
 float accXThreshold = 8.0;
 float accYThreshold = 8.0;
 float accZThreshold = 8.0;
-bool useAndLogic = false; // If true, all conditions must meet; if false, any condition triggers
+bool useAndLogic = false;  // If true, all conditions must meet; if false, any condition triggers
 
 // Baseline for altitude and parachute status variables
 float baselineAltitude = 0;
@@ -227,7 +250,7 @@ bool baselineCaptured = false;
 float ALT_EWMA_ALPHA = 0.20f;
 float filteredRelAlt = 0.0f;
 float prevFilteredRelAlt = 0.0f;
-float verticalSpeed = 0.0f; // m/s
+float verticalSpeed = 0.0f;  // m/s
 unsigned long lastAltUpdateMs = 0;
 
 bool apogeeDetected = false;
@@ -235,11 +258,11 @@ float apogeeAltitude = 0.0f;
 unsigned long apogeeMillis = 0;
 int negVsCount = 0;
 
-float MIN_ALTITUDE_FOR_APOGEE = 5.0f; // meters (tune)
-float NEG_VS_CONFIRM = -0.20f;        // m/s (tune)
-int NEG_COUNT_CONFIRM = 3;            // consecutive samples (tune)
+float MIN_ALTITUDE_FOR_APOGEE = 5.0f;  // meters (tune)
+float NEG_VS_CONFIRM = -0.20f;         // m/s (tune)
+int NEG_COUNT_CONFIRM = 3;             // consecutive samples (tune)
 
-float LAUNCH_ACC_THRESHOLD = 15.0f; // m/s^2 (tune)
+float LAUNCH_ACC_THRESHOLD = 15.0f;  // m/s^2 (tune)
 unsigned long groundCandidateSince = 0;
 unsigned long GROUND_SETTLE_MS = 2000;
 String parachuteStatus = "unarmed";
@@ -266,14 +289,14 @@ uint32_t redColor, blueColor, purpleColor, greenColor, aquaColor, orangeColor;
 // -----------------------
 // Sensor & Servo Instances
 // -----------------------
-Adafruit_BMP280 bmp;  // BMP280 sensor instance
-Adafruit_MPU6050 mpu; // MPU6050 sensor instance
-Servo parachuteservo; // Servo controlling the parachute deployment
-int servoPin = 14;    // Servo control pin
+Adafruit_BMP280 bmp;   // BMP280 sensor instance
+Adafruit_MPU6050 mpu;  // MPU6050 sensor instance
+Servo parachuteservo;  // Servo controlling the parachute deployment
+int servoPin = 14;     // Servo control pin
 
 // Eén bron van waarheid voor de CSV-header
 const char *CSV_HEADER_LINE =
-    "Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee";
+  "Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee";
 
 // -----------------------
 // Web Server & OTA Instances
@@ -299,7 +322,7 @@ float gyroX = 0.0, gyroY = 0.0, gyroZ = 0.0;
 const float gyroXerror = 0.03;
 const float gyroYerror = 0.03;
 const float gyroZerror = 0.03;
-File uploadFile; // Global handle for file uploads
+File uploadFile;  // Global handle for file uploads
 
 // -----------------------
 // WebSocket timing variables for Visualization updates
@@ -372,27 +395,22 @@ document.getElementById('uploadForm').onsubmit = async function(e) {
 // ---------------------------------------------------------------------------
 // Sensor Reading Functions (with Axis Correction applied)
 // ---------------------------------------------------------------------------
-String getGyroReadings()
-{
+String getGyroReadings() {
   sensors_event_t a, g, temp;
-  if (mpuFound)
-  {
+  if (mpuFound) {
     mpu.getEvent(&a, &g, &temp);
     float rawGx = g.gyro.x, rawGy = g.gyro.y, rawGz = g.gyro.z;
     float corrGx, corrGy, corrGz;
     // Adjust gyroscope axes to correct orientation using the helper function
     correctAxes(rawGx, rawGy, rawGz, corrGx, corrGy, corrGz);
     // Increment the global gyro accumulators if the change is above noise threshold
-    if (fabs(corrGx) > gyroXerror)
-    {
+    if (fabs(corrGx) > gyroXerror) {
       gyroX += corrGx / 30.00;
     }
-    if (fabs(corrGy) > gyroYerror)
-    {
+    if (fabs(corrGy) > gyroYerror) {
       gyroY += corrGy / 30.00;
     }
-    if (fabs(corrGz) > gyroZerror)
-    {
+    if (fabs(corrGz) > gyroZerror) {
       gyroZ += corrGz / 30.00;
     }
     StaticJsonDocument<512> doc;
@@ -402,9 +420,7 @@ String getGyroReadings()
     String jsonString;
     serializeJson(doc, jsonString);
     return jsonString;
-  }
-  else
-  {
+  } else {
     StaticJsonDocument<512> doc;
     doc["gyroX"] = "N/A";
     doc["gyroY"] = "N/A";
@@ -415,12 +431,10 @@ String getGyroReadings()
   }
 }
 
-String getAccReadings()
-{
+String getAccReadings() {
   sensors_event_t a, g, temp;
   StaticJsonDocument<512> doc;
-  if (mpuFound)
-  {
+  if (mpuFound) {
     mpu.getEvent(&a, &g, &temp);
     float corrAx, corrAy, corrAz;
     // Correct accelerometer axes for proper orientation
@@ -428,9 +442,7 @@ String getAccReadings()
     doc["accX"] = corrAx;
     doc["accY"] = corrAy;
     doc["accZ"] = corrAz;
-  }
-  else
-  {
+  } else {
     doc["accX"] = "N/A";
     doc["accY"] = "N/A";
     doc["accZ"] = "N/A";
@@ -440,16 +452,12 @@ String getAccReadings()
   return accString;
 }
 
-String getTemperatureReading()
-{
+String getTemperatureReading() {
   sensors_event_t a, g, temp;
-  if (mpuFound)
-  {
+  if (mpuFound) {
     mpu.getEvent(&a, &g, &temp);
     return String(temp.temperature);
-  }
-  else
-  {
+  } else {
     return "N/A";
   }
 }
@@ -467,66 +475,61 @@ String getTemperatureReading()
 // Function: correctAxes
 // -----------------------
 // This function swaps and inverts raw sensor axis values based on the chosen configuration.
-void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY, float &corrZ)
-{
-  switch (axisConfig)
-  {
-  case 0:
-    // Default transformation (as currently implemented).
-    // Mapping: Swap x>-X and y>Z and z>Y
-    corrX = -rawX;
-    corrY = rawY;
-    corrZ = rawZ;
-    break;
-  case 1:
-    // Variant 1: Mapping: Swap x>-X and y>Y and z>Z
-    corrX = -rawX;
-    corrY = rawY;
-    corrZ = rawZ;
-    break;
-  case 2:
-    // Variant 2: Mapping: Swap x>Y and y>X and z>Z
-    corrX = rawY;
-    corrY = rawX;
-    corrZ = rawZ;
-    break;
-  case 3:
-    // Variant 3: Mapping: Swap x>Y and y>Z and z>X
-    corrX = rawY;
-    corrY = rawZ;
-    corrZ = rawX;
-    break;
-  case 4:
-    // Variant 4: Mapping: Swap x>Z and y>Y and z>X
-    corrX = rawZ;
-    corrY = rawY;
-    corrZ = rawX;
-    break;
-  case 5:
-    // Variant 5: Mapping Swap x>Z and y>X and z>Y
-    corrX = rawZ;
-    corrY = rawX;
-    corrZ = rawY;
-    break;
-  default:
-    // Fallback to the default transformation if an unrecognized value is used.
-    corrX = rawY;
-    corrY = rawZ;
-    corrZ = rawX;
-    break;
+void correctAxes(float rawX, float rawY, float rawZ, float &corrX, float &corrY, float &corrZ) {
+  switch (axisConfig) {
+    case 0:
+      // Default transformation (as currently implemented).
+      // Mapping: Swap x>-X and y>Z and z>Y
+      corrX = -rawX;
+      corrY = rawY;
+      corrZ = rawZ;
+      break;
+    case 1:
+      // Variant 1: Mapping: Swap x>-X and y>Y and z>Z
+      corrX = -rawX;
+      corrY = rawY;
+      corrZ = rawZ;
+      break;
+    case 2:
+      // Variant 2: Mapping: Swap x>Y and y>X and z>Z
+      corrX = rawY;
+      corrY = rawX;
+      corrZ = rawZ;
+      break;
+    case 3:
+      // Variant 3: Mapping: Swap x>Y and y>Z and z>X
+      corrX = rawY;
+      corrY = rawZ;
+      corrZ = rawX;
+      break;
+    case 4:
+      // Variant 4: Mapping: Swap x>Z and y>Y and z>X
+      corrX = rawZ;
+      corrY = rawY;
+      corrZ = rawX;
+      break;
+    case 5:
+      // Variant 5: Mapping Swap x>Z and y>X and z>Y
+      corrX = rawZ;
+      corrY = rawX;
+      corrZ = rawY;
+      break;
+    default:
+      // Fallback to the default transformation if an unrecognized value is used.
+      corrX = rawY;
+      corrY = rawZ;
+      corrZ = rawX;
+      break;
   }
 }
 
 // NeoPixel color wheel helper, same as Adafruit's demo
-uint32_t Wheel(byte WheelPos)
-{
+uint32_t Wheel(byte WheelPos) {
   WheelPos = 255 - WheelPos;
-  if (WheelPos < 85)
-  {
+  if (WheelPos < 85) {
     return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
   }
-  if (WheelPos < 170)
-  {
+  if (WheelPos < 170) {
     WheelPos -= 85;
     return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
@@ -539,8 +542,7 @@ uint32_t Wheel(byte WheelPos)
 // -----------------------
 
 // Initializes global LED color variables using a color wheel function
-void initLEDColors()
-{
+void initLEDColors() {
   redColor = Wheel(0);
   blueColor = Wheel(170);
   purpleColor = Wheel(200);
@@ -550,10 +552,8 @@ void initLEDColors()
 }
 
 // Set all LEDs to a specific color
-void setAllLEDs(uint32_t color)
-{
-  for (int i = 0; i < LEDS_COUNT; i++)
-  {
+void setAllLEDs(uint32_t color) {
+  for (int i = 0; i < LEDS_COUNT; i++) {
     // strip.setLedColorData(i, color);
     strip.setPixelColor(i, color);
   }
@@ -584,106 +584,105 @@ void showRainbowCycle(uint8_t wait, int8_t direction = 1, uint16_t rotations = 1
 */
 
 // Sequentially display a color across the LED strip
-void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t rotations = 1)
-{
-  for (uint16_t r = 0; r < rotations; r++)
-  {
-    if (direction >= 0)
-    {
-      for (int i = 0; i < LEDS_COUNT; i++)
-      {
-        // strip.setLedColorData(i, color);
-        strip.setPixelColor(i, color);
+void showLEDColorsSequentially(uint32_t color, int8_t direction = 1, uint16_t rotations = 1) {
+  // Onboard LED case: no "sequential" animation possible
+  if (LEDS_COUNT <= 1) {
+    // One "rotation" = one pulse (on/off)
+    for (uint16_t r = 0; r < rotations; r++) {
+      strip.setPixelColor(0, color);
+      strip.show();
+      delay(120);
+      strip.setPixelColor(0, 0);
+      strip.show();
+      delay(120);
+    }
+    return;
+  }
 
+  // Strip/ring case (original behavior)
+  for (uint16_t r = 0; r < rotations; r++) {
+    if (direction >= 0) {
+      for (int i = 0; i < LEDS_COUNT; i++) {
+        strip.setPixelColor(i, color);
+        strip.show();
+        delay(40);
+      }
+    } else {
+      for (int i = LEDS_COUNT - 1; i >= 0; i--) {
+        strip.setPixelColor(i, color);
         strip.show();
         delay(40);
       }
     }
-    else
-    {
-      for (int i = LEDS_COUNT - 1; i >= 0; i--)
-      {
-        //  strip.setLedColorData(i, color);
-        strip.setPixelColor(i, color);
 
-        strip.show();
-        delay(40);
-      }
-    }
     setAllLEDs(0);
     delay(100);
   }
 }
 
+
 // Blink the entire LED strip with a specified color, number of times, and delay between blinks
-void blinkColor(uint32_t color, int times, int delayms)
-{
-  for (int t = 0; t < times; t++)
-  {
-    setAllLEDs(color); // update RAM buffer
-    strip.show();      // ← actually send the data to the LEDs
+void blinkColor(uint32_t color, int times, int delayms) {
+  for (int t = 0; t < times; t++) {
+    setAllLEDs(color);
     delay(delayms);
-    setAllLEDs(0); // clear buffer
-    strip.show();  // ← turn LEDs off
+    setAllLEDs(0);
     delay(delayms);
   }
 }
 
+
 // Set LEDs to alternating red and purple pattern
-void setWarningPatternLEDs()
-{
-  for (int i = 0; i < LEDS_COUNT; i++)
-  {
-    if (i % 2 == 0)
-    {
-      strip.setPixelColor(i, redColor);
-    }
-    else
-    {
-      strip.setPixelColor(i, purpleColor);
-    }
+void setWarningPatternLEDs() {
+  if (LEDS_COUNT <= 1) {
+    strip.setPixelColor(0, redColor);  // choose red as the "steady warning" color
+    strip.show();
+    return;
+  }
+
+  for (int i = 0; i < LEDS_COUNT; i++) {
+    strip.setPixelColor(i, (i % 2 == 0) ? redColor : purpleColor);
   }
   strip.show();
 }
 
+
 // Show the pattern as an animation first, then leave it on
-void animateWarningPatternLEDs()
-{
-  // Sequential animation, similar to showLEDColorsSequentially
-  for (int i = 0; i < LEDS_COUNT; i++)
-  {
-    for (int j = 0; j <= i; j++)
-    {
-      if (j % 2 == 0)
-      {
-        strip.setPixelColor(j, redColor);
-      }
-      else
-      {
-        strip.setPixelColor(j, purpleColor);
-      }
+void animateWarningPatternLEDs() {
+  if (LEDS_COUNT <= 1) {
+    // Onboard LED: alternate red/purple quickly
+    for (int k = 0; k < 12; k++) {
+      strip.setPixelColor(0, (k % 2 == 0) ? redColor : purpleColor);
+      strip.show();
+      delay(80);
     }
-    // Set all the rest to off
-    for (int j = i + 1; j < LEDS_COUNT; j++)
-    {
+    // Leave the warning "state" on
+    strip.setPixelColor(0, redColor);
+    strip.show();
+    return;
+  }
+
+  // Strip/ring animation (your original logic)
+  for (int i = 0; i < LEDS_COUNT; i++) {
+    for (int j = 0; j <= i; j++) {
+      strip.setPixelColor(j, (j % 2 == 0) ? redColor : purpleColor);
+    }
+    for (int j = i + 1; j < LEDS_COUNT; j++) {
       strip.setPixelColor(j, 0);
     }
     strip.show();
-    delay(30); // Adjust delay for desired speed
+    delay(30);
   }
-  // Leave all LEDs in pattern
+
   setWarningPatternLEDs();
 }
 
+
 // Indicate WiFi connection status via LED blinking (green if connected, orange if not)
-void indicateWiFiStatus(bool connected)
-{
-  if (connected)
-  {
+void indicateWiFiStatus(bool connected) {
+  if (connected) {
     blinkColor(greenColor, 5, 250);
-  }
-  else
-  {
+  } else {
     blinkColor(orangeColor, 5, 250);
   }
 }
@@ -693,10 +692,8 @@ void indicateWiFiStatus(bool connected)
 // -----------------------
 
 // Returns a formatted timestamp string based on NTP or local time
-String getTimeStampString()
-{
-  if (lastSuccessfulNTP != 0)
-  {
+String getTimeStampString() {
+  if (lastSuccessfulNTP != 0) {
     unsigned long currentEpoch = lastSuccessfulNTP + ((millis() - lastSyncMillis) / 1000);
     time_t t = (time_t)currentEpoch;
     struct tm *ti = localtime(&t);
@@ -707,17 +704,14 @@ String getTimeStampString()
     String minuteStr = ti->tm_min < 10 ? "0" + String(ti->tm_min) : String(ti->tm_min);
     String secondStr = ti->tm_sec < 10 ? "0" + String(ti->tm_sec) : String(ti->tm_sec);
     return yearStr + "-" + monthStr + "-" + dayStr + " " + hoursStr + ":" + minuteStr + ":" + secondStr;
-  }
-  else
-  {
+  } else {
     timeClient.update();
     return String(timeClient.getFormattedTime());
   }
 }
 
 // Returns the locally stored sea level pressure
-float getLocalSeaLevelPressure()
-{
+float getLocalSeaLevelPressure() {
   return lastLocalPressure;
 }
 
@@ -726,32 +720,26 @@ float getLocalSeaLevelPressure()
 //
 // Updates local pressure using an API call to OpenWeatherMap. Falls back to EEPROM or default if necessary.
 // ---------------------------------------------------------------------------
-void updatePressureFromAPI()
-{
+void updatePressureFromAPI() {
   float localPressure = 1013.25;
 
   HTTPClient http;
   String url = String(owmEndpoint) + "?lat=" + String(currentLatitude, 6) + "&lon=" + String(currentLongitude, 6) + "&exclude=minutely,hourly,daily,alerts&appid=" + String(openWeatherMapApiKey);
   http.begin(url);
   int httpCode = http.GET();
-  if (httpCode == HTTP_CODE_OK)
-  {
+  if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
     Serial.println("API Call successful. Payload:");
     Serial.println(payload);
     StaticJsonDocument<1536> doc;
     DeserializationError error = deserializeJson(doc, payload);
-    if (!error)
-    {
-      if (doc.containsKey("cod"))
-      {
+    if (!error) {
+      if (doc.containsKey("cod")) {
         int apiErrorCode = doc["cod"];
         String apiErrorMessage = doc["message"].as<String>();
         Serial.printf("API Error %d: %s\n", apiErrorCode, apiErrorMessage.c_str());
         PressureSource = "API Error";
-      }
-      else
-      {
+      } else {
         localPressure = doc["current"]["pressure"];
         PressureSource = "API OpenWeather";
         EEPROM.put(EEPROM_PRESSURE_ADDR, localPressure);
@@ -760,16 +748,12 @@ void updatePressureFromAPI()
         Serial.println(localPressure);
         apiSuccess = true;
       }
-    }
-    else
-    {
+    } else {
       Serial.println("JSON parse error:");
       Serial.println(error.f_str());
       PressureSource = "API JSON Error";
     }
-  }
-  else
-  {
+  } else {
     Serial.printf("HTTP Error: %d (%s)\n", httpCode, http.errorToString(httpCode).c_str());
     PressureSource = "HTTP Error";
   }
@@ -778,17 +762,13 @@ void updatePressureFromAPI()
   EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
   Serial.print("EEPROM stored pressure: ");
   Serial.println(storedPressure);
-  if (!apiSuccess)
-  {
-    if (storedPressure > 500.0 && storedPressure < 1100.0)
-    {
+  if (!apiSuccess) {
+    if (storedPressure > 500.0 && storedPressure < 1100.0) {
       localPressure = storedPressure;
       PressureSource = "EEPROM";
       Serial.print("Using EEPROM Pressure: ");
       Serial.println(localPressure);
-    }
-    else
-    {
+    } else {
       localPressure = 1013.25;
       PressureSource = "Default Sea-Level";
       Serial.print("Using Default Sea-Level Pressure: ");
@@ -802,54 +782,60 @@ void updatePressureFromAPI()
 //
 // Check SPIFF Space and warn
 // ---------------------------------------------------------------------------
-void checkSpiffsSpaceAndWarn()
-{
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Check SPIFF Space and warn
+// ---------------------------------------------------------------------------
+void checkSpiffsSpaceAndWarn() {
   size_t spiffsUsedKB = SPIFFS.usedBytes() / 1024;
-  size_t spiffsTotalKB = SPIFFS.totalBytes() / 1024;
 
-  if (spiffsUsedKB >= MAX_SPIFFS_USED_KB)
-  {
-    // 1) visueel signaal
-    blinkColor(redColor, 10, 100);
+  if (spiffsUsedKB >= MAX_SPIFFS_USED_KB) {
+    bool ok = false;
 
-    // 2) kopieer huidige SPIFFS-log naar SD met duidelijke naam
-    if (SPIFFS.exists("/log.csv"))
-    {
-      String ts = getTimeStampString(); // "YYYY-MM-DD_HHMMSS" na replace
+#if FEATURE_SD_MMC
+    if (sdMounted && SPIFFS.exists("/log.csv")) {
+      String ts = getTimeStampString();
       ts.replace(":", "");
       ts.replace(" ", "_");
       String dst = "/SPIFFS_COPY_" + ts + ".csv";
 
-      bool ok = copyFileFS(SPIFFS, "/log.csv", SD_MMC, dst.c_str());
-      Serial.printf("SPIFFS log copied to SD %s: %s\n", dst.c_str(), ok ? "OK" : "FAIL");
-
-      // 3) SPIFFS-log roteren: remove + nieuwe lege met header
-      if (ok)
-      {
+      ok = copyFileFS(SPIFFS, "/log.csv", SD_MMC, dst.c_str());
+      if (ok) {
         SPIFFS.remove("/log.csv");
         ensureLogFileHasHeader(SPIFFS, "/log.csv");
       }
     }
+#endif
 
-    // 4) na rotatie gewoon weer doorloggen op SPIFFS
+    // If we could not offload to SD, stop SPIFFS logging and show warning.
+    if (!ok) {
+      spiffsLoggingAllowed = false;
+      alreadyWarned = true;
+      setWarningPatternLEDs();  // onboard -> red
+      return;
+    }
+
+    // Offload succeeded (or SD feature enabled and copy worked): resume normal behavior.
     spiffsLoggingAllowed = true;
-    alreadyWarned = false; // warning is afgehandeld; niet aan laten staan
-    setAllLEDs(blueColor); // terug naar normale kleur
+    alreadyWarned = false;
+    // NOTE: Consider removing this if you don't want SPIFFS housekeeping to override flight LEDs.
+    // setAllLEDs(blueColor);
     return;
   }
 
-  // onder de drempel → normaal loggen
+  // below threshold -> normal
   spiffsLoggingAllowed = true;
   alreadyWarned = false;
 }
+
+
 
 // ---------------------------------------------------------------------------
 // Actuation Functions for Parachute Deployment
 // ---------------------------------------------------------------------------
 
 // Executes a parachute release sequence with servo actuation and logs the event.
-void parachuteRelease()
-{
+void parachuteRelease() {
   Serial.println("Trigger condition met! Releasing parachute...");
   char eventLog[128];
   String eventTimestamp = getTimeStampString();
@@ -859,8 +845,7 @@ void parachuteRelease()
   //    appendCsv(SPIFFS, "/log.csv", eventLog);
   //  }
 
-  for (int i = 0; i < 2; i++)
-  {
+  for (int i = 0; i < 2; i++) {
     parachuteservo.write(0);
   }
   parachuteStatus = "released";
@@ -873,8 +858,7 @@ void parachuteRelease()
 }
 
 // Arms the parachute system, captures baseline altitude, and initializes sensor calibration.
-void parachuteArmed()
-{
+void parachuteArmed() {
 
   uiTriggeredBy = "NotTriggered";
   lastTriggeredBy = "NotTriggered";
@@ -893,8 +877,7 @@ void parachuteArmed()
   //    appendCsv(SPIFFS, "/log.csv", eventLog);
   //  }
 
-  if (!baselineCaptured)
-  {
+  if (!baselineCaptured) {
     baselineAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
     baselineCaptured = true;
     Serial.print("Baseline altitude captured: ");
@@ -914,20 +897,16 @@ void parachuteArmed()
   apogeeAltitude = 0.0f;
   negVsCount = 0;
 
-  if (alreadyWarned)
-  {
-    setWarningPatternLEDs(); // Or animateWarningPatternLEDs();
-  }
-  else
-  {
+  if (alreadyWarned) {
+    setWarningPatternLEDs();  // Or animateWarningPatternLEDs();
+  } else {
     showLEDColorsSequentially(redColor, 1, 3);
     setAllLEDs(redColor);
   }
 }
 
 // Calibrates sensors by capturing baseline altitude and accelerometer offsets.
-void calibrateSensors()
-{
+void calibrateSensors() {
   rocketStatus = "Calibrating";
   uiTriggeredBy = "NotTriggered";
   lastTriggeredBy = "NotTriggered";
@@ -951,23 +930,20 @@ void calibrateSensors()
   minAltitudeDrop = 1000000.0;
   Serial.print("Calibration complete. Baseline altitude: ");
   Serial.println(baselineAltitude);
-  showLEDColorsSequentially(orangeColor, 1, 1);  // seq. orange, forward, 1 rot.
-  showLEDColorsSequentially(orangeColor, -1, 1); // seq. orange, reverse, 1 rot.
+  showLEDColorsSequentially(orangeColor, 1, 1);   // seq. orange, forward, 1 rot.
+  showLEDColorsSequentially(orangeColor, -1, 1);  // seq. orange, reverse, 1 rot.
 
   parachuteStatus = parachutePreStatus;
   Serial.println("Parachute status restored post-calibration.");
   // If we’re back to “armed”, show solid red LEDs:
-  if (!alreadyWarned)
-  {
+  if (!alreadyWarned) {
     if (parachuteStatus == "armed")
       setAllLEDs(redColor);
     if (parachuteStatus == "unarmed")
       setAllLEDs(blueColor);
     if (parachuteStatus == "released")
       setAllLEDs(greenColor);
-  }
-  else
-  {
+  } else {
     setWarningPatternLEDs();
   }
   // Reset sensor mode to Flight mode after calibration
@@ -977,290 +953,240 @@ void calibrateSensors()
   Serial.println(sensorModeFlight);
 }
 
-void appendCsv(fs::FS &fs, const char *path, const String &line)
-{
+void appendCsv(fs::FS &fs, const char *path, const String &line) {
   bool needHeader = !fs.exists(path);
-  if (!needHeader)
-  {
+  if (!needHeader) {
     File fr = fs.open(path, FILE_READ);
     if (!fr)
       needHeader = true;
-    else
-    {
+    else {
       if (fr.size() == 0)
         needHeader = true;
       fr.close();
     }
   }
-  if (needHeader)
-  {
+  if (needHeader) {
     File fw = fs.open(path, FILE_APPEND);
-    if (fw)
-    {
+    if (fw) {
       fw.println(CSV_HEADER_LINE);
       fw.close();
     }
   }
   File f = fs.open(path, FILE_APPEND);
-  if (f)
-  {
+  if (f) {
     f.print(line);
     f.close();
   }
 }
 
 // Function to make sure headers are always written to file
-void ensureLogFileHasHeader(fs::FS &fs, const char *path)
-{
-  if (!fs.exists(path))
-  {
+void ensureLogFileHasHeader(fs::FS &fs, const char *path) {
+  if (!fs.exists(path)) {
     // Bestaat niet: header toevoegen
     File f = fs.open(path, FILE_WRITE);
-    if (f)
-    {
+    if (f) {
       f.println(CSV_HEADER_LINE);
       f.close();
     }
-  }
-  else
-  {
+  } else {
     // Bestaat wél: check of hij leeg is (==0 bytes)
     File f = fs.open(path, FILE_READ);
-    if (f && f.size() == 0)
-    {
+    if (f && f.size() == 0) {
       f.close();
       // Voeg alsnog headers toe
       File fw = fs.open(path, FILE_WRITE);
-      if (fw)
-      {
+      if (fw) {
         fw.println(CSV_HEADER_LINE);
         fw.close();
       }
-    }
-    else if (f)
-    {
+    } else if (f) {
       f.close();
     }
   }
 }
 
-void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length)
-{
-  switch (type)
-  {
-  case WStype_DISCONNECTED:
-    Serial.println("Client " + String(num) + " disconnected");
-    //   blinkColor(orangeColor, 4, 300);
-    break;
-  case WStype_CONNECTED:
-    Serial.println("Client " + String(num) + " connected");
-    //  blinkColor(aquaColor, 4, 300);
-    break;
-  case WStype_TEXT:
-  {
-    StaticJsonDocument<2048> doc; // plenty for your largest UI payloads
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error)
-    {
-      Serial.print(F("WS JSON parse failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-    else
-    {
-      if (doc.containsKey("newThreshold"))
+void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.println("Client " + String(num) + " disconnected");
+      //   blinkColor(orangeColor, 4, 300);
+      break;
+    case WStype_CONNECTED:
+      Serial.println("Client " + String(num) + " connected");
+      //  blinkColor(aquaColor, 4, 300);
+      break;
+    case WStype_TEXT:
       {
-        altitudeDropThreshold = doc["newThreshold"];
-        Serial.print("New Altitude Drop Threshold: ");
-        Serial.println(altitudeDropThreshold);
-      }
-      if (doc.containsKey("newAccX"))
-      {
-        accXThreshold = doc["newAccX"];
-        Serial.print("New Accelerometer X threshold: ");
-        Serial.println(accXThreshold);
-      }
-      if (doc.containsKey("newAccY"))
-      {
-        accYThreshold = doc["newAccY"];
-        Serial.print("New Accelerometer Y threshold: ");
-        Serial.println(accYThreshold);
-      }
-      if (doc.containsKey("newAccZ"))
-      {
-        accZThreshold = doc["newAccZ"];
-        Serial.print("New Accelerometer Z threshold: ");
-        Serial.println(accZThreshold);
-      }
+        StaticJsonDocument<2048> doc;  // plenty for your largest UI payloads
+        DeserializationError error = deserializeJson(doc, payload);
+        if (error) {
+          Serial.print(F("WS JSON parse failed: "));
+          Serial.println(error.f_str());
+          return;
+        } else {
+          if (doc.containsKey("newThreshold")) {
+            altitudeDropThreshold = doc["newThreshold"];
+            Serial.print("New Altitude Drop Threshold: ");
+            Serial.println(altitudeDropThreshold);
+          }
+          if (doc.containsKey("newAccX")) {
+            accXThreshold = doc["newAccX"];
+            Serial.print("New Accelerometer X threshold: ");
+            Serial.println(accXThreshold);
+          }
+          if (doc.containsKey("newAccY")) {
+            accYThreshold = doc["newAccY"];
+            Serial.print("New Accelerometer Y threshold: ");
+            Serial.println(accYThreshold);
+          }
+          if (doc.containsKey("newAccZ")) {
+            accZThreshold = doc["newAccZ"];
+            Serial.print("New Accelerometer Z threshold: ");
+            Serial.println(accZThreshold);
+          }
 
-      // NEW: handle trigger checkbox updates
-      if (doc.containsKey("enAltDrop"))
-      {
-        enAltDrop = doc["enAltDrop"];
-        Serial.printf("Enable Altitude Drop Trigger: %s\n", enAltDrop ? "Yes" : "No");
-      }
-      if (doc.containsKey("enAccX"))
-      {
-        enAccX = doc["enAccX"];
-        Serial.printf("Enable AccX Trigger: %s\n", enAccX ? "Yes" : "No");
-      }
-      if (doc.containsKey("enAccY"))
-      {
-        enAccY = doc["enAccY"];
-        Serial.printf("Enable AccY Trigger: %s\n", enAccY ? "Yes" : "No");
-      }
-      if (doc.containsKey("enAccZ"))
-      {
-        enAccZ = doc["enAccZ"];
-        Serial.printf("Enable AccZ Trigger: %s\n", enAccZ ? "Yes" : "No");
-      }
-      if (doc.containsKey("enApogee"))
-      {
-        enApogee = doc["enApogee"];
-        Serial.printf("Enable Apogee Trigger: %s\n", enApogee ? "Yes" : "No");
-      }
+          // NEW: handle trigger checkbox updates
+          if (doc.containsKey("enAltDrop")) {
+            enAltDrop = doc["enAltDrop"];
+            Serial.printf("Enable Altitude Drop Trigger: %s\n", enAltDrop ? "Yes" : "No");
+          }
+          if (doc.containsKey("enAccX")) {
+            enAccX = doc["enAccX"];
+            Serial.printf("Enable AccX Trigger: %s\n", enAccX ? "Yes" : "No");
+          }
+          if (doc.containsKey("enAccY")) {
+            enAccY = doc["enAccY"];
+            Serial.printf("Enable AccY Trigger: %s\n", enAccY ? "Yes" : "No");
+          }
+          if (doc.containsKey("enAccZ")) {
+            enAccZ = doc["enAccZ"];
+            Serial.printf("Enable AccZ Trigger: %s\n", enAccZ ? "Yes" : "No");
+          }
+          if (doc.containsKey("enApogee")) {
+            enApogee = doc["enApogee"];
+            Serial.printf("Enable Apogee Trigger: %s\n", enApogee ? "Yes" : "No");
+          }
 
-      // --- Nieuwe drempel-instellingen vanuit de UI ---
-      if (doc.containsKey("minApogeeAlt"))
-      {
-        MIN_ALTITUDE_FOR_APOGEE = doc["minApogeeAlt"].as<float>();
-        Serial.printf("MIN_ALTITUDE_FOR_APOGEE = %.2f\n", MIN_ALTITUDE_FOR_APOGEE);
-      }
-      if (doc.containsKey("negVsConfirm"))
-      {
-        NEG_VS_CONFIRM = doc["negVsConfirm"].as<float>();
-        Serial.printf("NEG_VS_CONFIRM = %.3f\n", NEG_VS_CONFIRM);
-      }
-      if (doc.containsKey("negCountConfirm"))
-      {
-        NEG_COUNT_CONFIRM = doc["negCountConfirm"].as<int>();
-        Serial.printf("NEG_COUNT_CONFIRM = %d\n", NEG_COUNT_CONFIRM);
-      }
-      if (doc.containsKey("launchAccThreshold"))
-      {
-        LAUNCH_ACC_THRESHOLD = doc["launchAccThreshold"].as<float>();
-        Serial.printf("LAUNCH_ACC_THRESHOLD = %.2f\n", LAUNCH_ACC_THRESHOLD);
-      }
-      if (doc.containsKey("groundSettleMs"))
-      {
-        GROUND_SETTLE_MS = doc["groundSettleMs"].as<unsigned long>();
-        Serial.printf("GROUND_SETTLE_MS = %lu\n", (unsigned long)GROUND_SETTLE_MS);
-      }
+          // --- Nieuwe drempel-instellingen vanuit de UI ---
+          if (doc.containsKey("minApogeeAlt")) {
+            MIN_ALTITUDE_FOR_APOGEE = doc["minApogeeAlt"].as<float>();
+            Serial.printf("MIN_ALTITUDE_FOR_APOGEE = %.2f\n", MIN_ALTITUDE_FOR_APOGEE);
+          }
+          if (doc.containsKey("negVsConfirm")) {
+            NEG_VS_CONFIRM = doc["negVsConfirm"].as<float>();
+            Serial.printf("NEG_VS_CONFIRM = %.3f\n", NEG_VS_CONFIRM);
+          }
+          if (doc.containsKey("negCountConfirm")) {
+            NEG_COUNT_CONFIRM = doc["negCountConfirm"].as<int>();
+            Serial.printf("NEG_COUNT_CONFIRM = %d\n", NEG_COUNT_CONFIRM);
+          }
+          if (doc.containsKey("launchAccThreshold")) {
+            LAUNCH_ACC_THRESHOLD = doc["launchAccThreshold"].as<float>();
+            Serial.printf("LAUNCH_ACC_THRESHOLD = %.2f\n", LAUNCH_ACC_THRESHOLD);
+          }
+          if (doc.containsKey("groundSettleMs")) {
+            GROUND_SETTLE_MS = doc["groundSettleMs"].as<unsigned long>();
+            Serial.printf("GROUND_SETTLE_MS = %lu\n", (unsigned long)GROUND_SETTLE_MS);
+          }
 
-      // Stuur de actuele waarden meteen terug naar de UI zodat velden syncen
-      {
-        StaticJsonDocument<512> ack;
-        ack["LaunchAccThreshold"] = LAUNCH_ACC_THRESHOLD;
-        ack["MinApogeeAlt"] = MIN_ALTITUDE_FOR_APOGEE;
-        ack["NegVsConfirm"] = NEG_VS_CONFIRM;
-        ack["NegCountConfirm"] = NEG_COUNT_CONFIRM;
-        ack["GroundSettleMs"] = GROUND_SETTLE_MS;
-        // add current trigger config too:
-        ack["EnAltDrop"] = enAltDrop;
-        ack["EnAccX"] = enAccX;
-        ack["EnAccY"] = enAccY;
-        ack["EnAccZ"] = enAccZ;
-        ack["AltDropThreshold"] = altitudeDropThreshold;
-        ack["AccXThreshold"] = accXThreshold;
-        ack["AccYThreshold"] = accYThreshold;
-        ack["AccZThreshold"] = accZThreshold;
-        String s;
-        serializeJson(ack, s);
-        webSocket.broadcastTXT(s);
-      }
+          // Stuur de actuele waarden meteen terug naar de UI zodat velden syncen
+          {
+            StaticJsonDocument<512> ack;
+            ack["LaunchAccThreshold"] = LAUNCH_ACC_THRESHOLD;
+            ack["MinApogeeAlt"] = MIN_ALTITUDE_FOR_APOGEE;
+            ack["NegVsConfirm"] = NEG_VS_CONFIRM;
+            ack["NegCountConfirm"] = NEG_COUNT_CONFIRM;
+            ack["GroundSettleMs"] = GROUND_SETTLE_MS;
+            // add current trigger config too:
+            ack["EnAltDrop"] = enAltDrop;
+            ack["EnAccX"] = enAccX;
+            ack["EnAccY"] = enAccY;
+            ack["EnAccZ"] = enAccZ;
+            ack["AltDropThreshold"] = altitudeDropThreshold;
+            ack["AccXThreshold"] = accXThreshold;
+            ack["AccYThreshold"] = accYThreshold;
+            ack["AccZThreshold"] = accZThreshold;
+            String s;
+            serializeJson(ack, s);
+            webSocket.broadcastTXT(s);
+          }
 
-      if (doc.containsKey("newTriggerLogic"))
-      {
-        String newLogic = doc["newTriggerLogic"];
-        useAndLogic = (newLogic == "AND");
-        Serial.print("New Trigger Logic: ");
-        Serial.println(useAndLogic ? "AND" : "OR");
-      }
-      if (doc.containsKey("triggerAbs"))
-      {
-        triggerAbs = doc["triggerAbs"];
-        Serial.print("New Trigger Absolute (both sides): ");
-        Serial.println(triggerAbs ? "Yes" : "No");
-      }
-      if (doc.containsKey("calibrateSensors"))
-      {
-        calibrateSensors();
-        Serial.println("Sensors calibrated.");
-      }
-      // Handle axis configuration update from the web interface
-      if (doc.containsKey("sensorModeFlight"))
-      {
-        sensorModeFlight = doc["sensorModeFlight"];
-        Serial.printf("SensorModeFlight: %s\n", sensorModeFlight ? "ON" : "OFF");
-      }
-      if (doc.containsKey("axisConfig"))
-      {
-        axisConfig = doc["axisConfig"];
-        Serial.print("Axis configuration updated to: ");
-        Serial.println(axisConfig);
-      }
+          if (doc.containsKey("newTriggerLogic")) {
+            String newLogic = doc["newTriggerLogic"];
+            useAndLogic = (newLogic == "AND");
+            Serial.print("New Trigger Logic: ");
+            Serial.println(useAndLogic ? "AND" : "OR");
+          }
+          if (doc.containsKey("triggerAbs")) {
+            triggerAbs = doc["triggerAbs"];
+            Serial.print("New Trigger Absolute (both sides): ");
+            Serial.println(triggerAbs ? "Yes" : "No");
+          }
+          if (doc.containsKey("calibrateSensors")) {
+            calibrateSensors();
+            Serial.println("Sensors calibrated.");
+          }
+          // Handle axis configuration update from the web interface
+          if (doc.containsKey("sensorModeFlight")) {
+            sensorModeFlight = doc["sensorModeFlight"];
+            Serial.printf("SensorModeFlight: %s\n", sensorModeFlight ? "ON" : "OFF");
+          }
+          if (doc.containsKey("axisConfig")) {
+            axisConfig = doc["axisConfig"];
+            Serial.print("Axis configuration updated to: ");
+            Serial.println(axisConfig);
+          }
 
-      const char *command = doc["parachute"];
-      Serial.println("Received parachute command from client " + String(num));
-      if (String(command) == "Armed")
-      {
-        parachuteArmed();
-        Serial.println("Parachute armed command processed.");
-      }
-      else if (String(command) == "Released")
-      {
-        parachuteRelease();
-        Serial.println("Parachute release command processed.");
-      }
-      else if (String(command) == "Unarmed")
-      {
-        parachuteUnarmed();
-        Serial.println("Parachute unarmed command processed.");
-      }
-      if (doc.containsKey("request") && String(doc["request"]) == "telemetry")
-      {
-        // One-shot snapshot is handled by main loop publishing shortly after
-      }
+          const char *command = doc["parachute"];
+          Serial.println("Received parachute command from client " + String(num));
+          if (String(command) == "Armed") {
+            parachuteArmed();
+            Serial.println("Parachute armed command processed.");
+          } else if (String(command) == "Released") {
+            parachuteRelease();
+            Serial.println("Parachute release command processed.");
+          } else if (String(command) == "Unarmed") {
+            parachuteUnarmed();
+            Serial.println("Parachute unarmed command processed.");
+          }
+          if (doc.containsKey("request") && String(doc["request"]) == "telemetry") {
+            // One-shot snapshot is handled by main loop publishing shortly after
+          }
 
-      // NEW: handle location updates
-      if (doc.containsKey("latitude") && doc.containsKey("longitude"))
-      {
-        currentLatitude = doc["latitude"];
-        currentLongitude = doc["longitude"];
-        // 1) clear the flag
-        apiPressureUpdated = false;
-        // 2) fetch right away, using the new coords
-        updatePressureFromAPI();
-        // 3) push the fresh pressure + coords back to the page
-        StaticJsonDocument<128> out;
-        out["Latitude"] = currentLatitude;
-        out["Longitude"] = currentLongitude;
-        out["LocalPressure"] = lastLocalPressure;
-        out["PressureSource"] = PressureSource;
-        String s;
-        serializeJson(out, s);
-        webSocket.broadcastTXT(s);
+          // NEW: handle location updates
+          if (doc.containsKey("latitude") && doc.containsKey("longitude")) {
+            currentLatitude = doc["latitude"];
+            currentLongitude = doc["longitude"];
+            // 1) clear the flag
+            apiPressureUpdated = false;
+            // 2) fetch right away, using the new coords
+            updatePressureFromAPI();
+            // 3) push the fresh pressure + coords back to the page
+            StaticJsonDocument<128> out;
+            out["Latitude"] = currentLatitude;
+            out["Longitude"] = currentLongitude;
+            out["LocalPressure"] = lastLocalPressure;
+            out["PressureSource"] = PressureSource;
+            String s;
+            serializeJson(out, s);
+            webSocket.broadcastTXT(s);
+          }
+        }
+        Serial.println("");
+        break;
       }
-    }
-    Serial.println("");
-    break;
-  }
   }
 }
 
-void parachuteUnarmed()
-{
+void parachuteUnarmed() {
   parachuteStatus = "unarmed";
   uiTriggeredBy = "NotTriggered";
   lastTriggeredBy = "NotTriggered";
-  baselineCaptured = false; // Optional: Clear baseline so it's recalculated next time
-  if (!alreadyWarned)
-  {
-    setAllLEDs(blueColor); // Blue = unarmed/safe
-  }
-  else
-  {
-    setWarningPatternLEDs(); // If SPIFFS warning active, keep warning pattern
+  baselineCaptured = false;  // Optional: Clear baseline so it's recalculated next time
+  if (!alreadyWarned) {
+    setAllLEDs(blueColor);  // Blue = unarmed/safe
+  } else {
+    setWarningPatternLEDs();  // If SPIFFS warning active, keep warning pattern
   }
   Serial.println("Parachute is now UNARMED. Logging to SPIFFS will stop unless armed.");
 }
@@ -1268,18 +1194,15 @@ void parachuteUnarmed()
 // ========== FILE MANAGEMENT FUNCTIONS ==========
 
 // -- Helper to list files in a given FS (SPIFFS or SD_MMC)
-String listFilesJSON(fs::FS &fs, const char *path = "/")
-{
+String listFilesJSON(fs::FS &fs, const char *path = "/") {
   String json = "[";
   File root = fs.open(path);
-  if (!root || !root.isDirectory())
-  {
+  if (!root || !root.isDirectory()) {
     return "[]";
   }
   File file = root.openNextFile();
   bool first = true;
-  while (file)
-  {
+  while (file) {
     if (!first)
       json += ",";
     json += "{";
@@ -1294,123 +1217,134 @@ String listFilesJSON(fs::FS &fs, const char *path = "/")
 }
 
 // JSON endpoint voor SD & SPIFFS files
-void handleListFilesJson()
-{
+void handleListFilesJson() {
   String json = "{";
-  json += "\"sd\":" + listFilesJSON(SD_MMC);
+
+#if FEATURE_SD_MMC
+  if (sdMounted) json += "\"sd\":" + listFilesJSON(SD_MMC);
+  else json += "\"sd\":[]";
+#else
+  json += "\"sd\":[]";
+#endif
+
   json += ",\"spiffs\":" + listFilesJSON(SPIFFS);
   json += "}";
   server.send(200, "application/json", json);
 }
 
 // -- Handle delete from SPIFFS (expects GET param: name=/filename.txt)
-void handleSPIFFSFileDelete()
-{
-  if (!server.hasArg("name"))
-  {
+void handleSPIFFSFileDelete() {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing file name");
     return;
   }
   String fname = server.arg("name");
-  if (!SPIFFS.exists(fname))
-  {
+  if (!SPIFFS.exists(fname)) {
     server.send(404, "text/plain", "File not found in SPIFFS");
     return;
   }
-  if (SPIFFS.remove(fname))
-  {
+  if (SPIFFS.remove(fname)) {
     server.send(200, "text/plain", "Deleted from SPIFFS");
-  }
-  else
-  {
+  } else {
     server.send(500, "text/plain", "Failed to delete from SPIFFS");
   }
 }
 
 // -- Handle delete from SD (expects GET param: name=/filename.txt)
-void handleSDFileDelete()
-{
-  if (!server.hasArg("name"))
-  {
+void handleSDFileDelete() {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing file name");
     return;
   }
   String fname = server.arg("name");
-  if (!SD_MMC.exists(fname))
-  {
+
+#if FEATURE_SD_MMC
+  if (!sdMounted) {
+    server.send(503, "text/plain", "SD not mounted");
+    return;
+  }
+
+  if (!SD_MMC.exists(fname)) {
     server.send(404, "text/plain", "File not found on SD");
     return;
   }
+
   if (SD_MMC.remove(fname))
-  {
     server.send(200, "text/plain", "Deleted from SD");
-  }
   else
-  {
     server.send(500, "text/plain", "Failed to delete from SD");
-  }
+#else
+  server.send(501, "text/plain", "SD feature disabled");
+#endif
 }
 
+
 // -- Handle download: tries SD first, then SPIFFS (expects GET param: name=/filename.txt)
-void handleCombinedFileDownload()
-{
-  if (!server.hasArg("name"))
-  {
+void handleCombinedFileDownload() {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing file name");
     return;
   }
   String fname = server.arg("name");
-  File file = SD_MMC.open(fname, FILE_READ);
-  if (!file)
-    file = SPIFFS.open(fname, FILE_READ);
-  if (!file)
-  {
+  File file;
+
+#if FEATURE_SD_MMC
+  if (sdMounted) file = SD_MMC.open(fname, FILE_READ);
+#endif
+
+  if (!file) file = SPIFFS.open(fname, FILE_READ);
+  if (!file) {
     server.send(404, "text/plain", "File not found on SD or SPIFFS");
     return;
   }
 
-  // --- Fix: Add correct filename to Content-Disposition ---
   String outFilename = fname;
   int slash = outFilename.lastIndexOf('/');
-  if (slash != -1)
-    outFilename = outFilename.substring(slash + 1);
+  if (slash != -1) outFilename = outFilename.substring(slash + 1);
 
   server.sendHeader("Content-Disposition", "attachment; filename=\"" + outFilename + "\"");
   server.streamFile(file, "application/octet-stream");
   file.close();
 }
 
-void handleSDFileDownload()
-{
-  if (!server.hasArg("name"))
-  {
+
+void handleSDFileDownload() {
+#if !FEATURE_SD_MMC
+  server.send(501, "text/plain", "SD feature disabled");
+  return;
+#else
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing file name");
     return;
   }
+  if (!sdMounted) {
+    server.send(503, "text/plain", "SD not mounted");
+    return;
+  }
+
   String fname = server.arg("name");
   File f = SD_MMC.open(fname, FILE_READ);
-  if (!f)
-  {
+  if (!f) {
     server.send(404, "text/plain", "File not found on SD");
     return;
   }
+
   String out = fname.substring(fname.lastIndexOf('/') + 1);
   server.sendHeader("Content-Disposition", "attachment; filename=\"" + out + "\"");
   server.streamFile(f, "application/octet-stream");
   f.close();
+#endif
 }
 
-void handleSPIFFSFileDownload()
-{
-  if (!server.hasArg("name"))
-  {
+
+void handleSPIFFSFileDownload() {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing file name");
     return;
   }
   String fname = server.arg("name");
   File f = SPIFFS.open(fname, FILE_READ);
-  if (!f)
-  {
+  if (!f) {
     server.send(404, "text/plain", "File not found on SPIFFS");
     return;
   }
@@ -1421,98 +1355,87 @@ void handleSPIFFSFileDownload()
 }
 
 // -- Handle upload to SPIFFS
-void handleFileUpload()
-{
+void handleFileUpload() {
   HTTPUpload &upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START)
-  {
+  if (upload.status == UPLOAD_FILE_START) {
     String fname = upload.filename;
     if (!fname.startsWith("/"))
       fname = "/" + fname;
     uploadFile = SPIFFS.open(fname, FILE_WRITE);
-  }
-  else if (upload.status == UPLOAD_FILE_WRITE)
-  {
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (uploadFile)
       uploadFile.write(upload.buf, upload.currentSize);
-  }
-  else if (upload.status == UPLOAD_FILE_END)
-  {
+  } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile)
       uploadFile.close();
   }
 }
 
 // -- Handle upload to SD
-void handleFileUploadSD()
-{
+void handleFileUploadSD() {
+#if !FEATURE_SD_MMC
+  // If someone hits /uploadsd, reject cleanly
+  return;
+#else
+  if (!sdMounted) return;
+
   HTTPUpload &upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START)
-  {
+  if (upload.status == UPLOAD_FILE_START) {
     String fname = upload.filename;
-    if (!fname.startsWith("/"))
-      fname = "/" + fname;
+    if (!fname.startsWith("/")) fname = "/" + fname;
     uploadFile = SD_MMC.open(fname, FILE_WRITE);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) uploadFile.close();
   }
-  else if (upload.status == UPLOAD_FILE_WRITE)
-  {
-    if (uploadFile)
-      uploadFile.write(upload.buf, upload.currentSize);
-  }
-  else if (upload.status == UPLOAD_FILE_END)
-  {
-    if (uploadFile)
-      uploadFile.close();
-  }
+#endif
 }
 
+
 // -- Optionally: Delete file from both SD and SPIFFS
-void handleCombinedFileDelete()
-{
-  if (!server.hasArg("name"))
-  {
+void handleCombinedFileDelete() {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing file name");
     return;
   }
   String fname = server.arg("name");
   bool deleted = false;
-  if (SD_MMC.exists(fname))
+
+#if FEATURE_SD_MMC
+  if (sdMounted && SD_MMC.exists(fname))
     deleted |= SD_MMC.remove(fname);
+#endif
+
   if (SPIFFS.exists(fname))
     deleted |= SPIFFS.remove(fname);
+
   if (deleted)
-  {
     server.send(200, "text/plain", "Deleted from SD or SPIFFS");
-  }
   else
-  {
     server.send(404, "text/plain", "File not found on SD or SPIFFS");
-  }
 }
 
+
 // ---- SD "Delete All" helpers (place above setup()) -------------------------
-struct DelStats
-{
+struct DelStats {
   uint32_t removed_files = 0;
   uint32_t removed_dirs = 0;
   uint32_t failed = 0;
 };
 
-static bool isProtectedEntry(const String &path)
-{
+static bool isProtectedEntry(const String &path) {
   // Windows leaves this read-only folder; skip it so the sweep continues.
   if (path.equalsIgnoreCase("/System Volume Information"))
     return true;
   return false;
 }
 
-static bool buildChildPath(const char *parent, const char *name, String &out)
-{
+static bool buildChildPath(const char *parent, const char *name, String &out) {
   if (!parent || !name)
     return false;
   // If 'name' is already an absolute path, just use it.
-  if (name[0] == '/')
-  {
+  if (name[0] == '/') {
     out = name;
     return true;
   }
@@ -1523,20 +1446,17 @@ static bool buildChildPath(const char *parent, const char *name, String &out)
   return true;
 }
 
-bool deleteRecursivelyWithStats(fs::FS &fs, const char *dirPath, DelStats &stats)
-{
+bool deleteRecursivelyWithStats(fs::FS &fs, const char *dirPath, DelStats &stats) {
   File root = fs.open(dirPath);
   if (!root || !root.isDirectory())
     return false;
 
   File f = root.openNextFile();
-  while (f)
-  {
+  while (f) {
     // Build absolute child path (SD_MMC sometimes returns only the entry name)
     String childPath;
     const char *entryName = f.name();
-    if (!buildChildPath(dirPath, entryName, childPath))
-    {
+    if (!buildChildPath(dirPath, entryName, childPath)) {
       stats.failed++;
       f.close();
       f = root.openNextFile();
@@ -1544,38 +1464,28 @@ bool deleteRecursivelyWithStats(fs::FS &fs, const char *dirPath, DelStats &stats
     }
 
     // Skip protected entries; keep going
-    if (isProtectedEntry(childPath))
-    {
+    if (isProtectedEntry(childPath)) {
       f.close();
       f = root.openNextFile();
       continue;
     }
 
-    if (f.isDirectory())
-    {
-      f.close(); // Close before recursing into it
+    if (f.isDirectory()) {
+      f.close();  // Close before recursing into it
       deleteRecursivelyWithStats(fs, childPath.c_str(), stats);
 
       // Try to remove the now-empty directory (some FS may not support rmdir)
-      if (fs.rmdir(childPath.c_str()))
-      {
+      if (fs.rmdir(childPath.c_str())) {
         stats.removed_dirs++;
-      }
-      else
-      {
+      } else {
         // Not fatal; record and continue
         stats.failed++;
       }
-    }
-    else
-    {
+    } else {
       f.close();
-      if (fs.remove(childPath.c_str()))
-      {
+      if (fs.remove(childPath.c_str())) {
         stats.removed_files++;
-      }
-      else
-      {
+      } else {
         stats.failed++;
       }
     }
@@ -1585,23 +1495,30 @@ bool deleteRecursivelyWithStats(fs::FS &fs, const char *dirPath, DelStats &stats
   return true;
 }
 
-void handleDeleteAllSD()
-{
+void handleDeleteAllSD() {
   blinkColor(redColor, 3, 150);
 
+#if !FEATURE_SD_MMC
+  // SD not supported in this build
+  server.send(501, "text/plain", "SD feature disabled");
+  return;
+#else
+  if (!sdMounted) {
+    server.send(503, "text/plain", "SD not mounted");
+    return;
+  }
+
   DelStats stats;
+
   // Sweep everything under "/" (we do not attempt to remove the root itself)
   deleteRecursivelyWithStats(SD_MMC, "/", stats);
 
   // Recreate the log file so logging can immediately resume
   File file = SD_MMC.open("/log.csv", FILE_WRITE);
-  if (file)
-  {
-    file.println("Timestamp,BMP Temp,Pressure,Absolute Altitude,Relative Altitude,Altitude Drop,MPU Temp,RawAccX,RawAccY,RawAccZ,AccX_Calib,AccY_Calib,AccZ_Calib,GyroX,GyroY,GyroZ,Parachute Status,Local Pressure,Default Sea-Level Pressure,API Status,Max Abs Altitude,Min Abs Altitude,Max Rel Altitude,Min Rel Altitude,Max Alt Drop,Min Alt Drop,Total Space,Used Space,SPIFFS Total,SPIFFS Used,Latitude,Longitude,AltDropThres,AccXThres,AccYThres,AccZThres,TriggerLogic,AxisConfig,TriggeredBy,EnAltDrop,EnAccX,EnAccY,EnAccZ,Vertical Speed,RocketStatus,ApogeeDetected,ApogeeAltitude,EnApogee");
+  if (file) {
+    file.println(CSV_HEADER_LINE);  // Use your single source of truth header
     file.close();
-  }
-  else
-  {
+  } else {
     stats.failed++;
   }
 
@@ -1611,15 +1528,15 @@ void handleDeleteAllSD()
   json += "\"failed\":" + String(stats.failed) + "}";
   // 207 Multi-Status if anything failed; 200 if a clean sweep
   server.send(stats.failed == 0 ? 200 : 207, "application/json", json);
+#endif
 }
 
-void handleSpiffsUpload()
-{
+
+void handleSpiffsUpload() {
   HTTPUpload &upload = server.upload();
   static String targetFolder;
   static File uploadFile;
-  if (upload.status == UPLOAD_FILE_START)
-  {
+  if (upload.status == UPLOAD_FILE_START) {
     // Get the folder from POST body, fallback to root if empty
     targetFolder = server.arg("folder");
     if (targetFolder.length() == 0)
@@ -1635,14 +1552,10 @@ void handleSpiffsUpload()
     if (!SPIFFS.exists(targetFolder.c_str()))
       SPIFFS.mkdir(targetFolder.c_str());
     uploadFile = SPIFFS.open(fullPath, FILE_WRITE);
-  }
-  else if (upload.status == UPLOAD_FILE_WRITE)
-  {
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (uploadFile)
       uploadFile.write(upload.buf, upload.currentSize);
-  }
-  else if (upload.status == UPLOAD_FILE_END)
-  {
+  } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile)
       uploadFile.close();
   }
@@ -1651,75 +1564,63 @@ void handleSpiffsUpload()
 // -----------------------
 // Setup Function: Initializes hardware, network, sensors, web server, and endpoints
 // -----------------------
-void setup()
-{
+void setup() {
   Serial.begin(115200);
   Serial.println(F("Starting setup..."));
   rocketStatus = "Booting";
   Serial.print(rocketStatus);
 
   // Mount SPIFFS for file serving and upload functionality.
-  if (!SPIFFS.begin(true))
-  {
+  if (!SPIFFS.begin(true)) {
     Serial.println("An error occurred while mounting SPIFFS");
-  }
-  else
-  {
+  } else {
     Serial.println("SPIFFS mounted successfully");
   }
-
   ensureLogFileHasHeader(SPIFFS, "/log.csv");
 
-  // Disable WiFi power saving mode
-  WiFi.setSleep(false);
-  esp_wifi_set_ps(WIFI_PS_NONE);
-
-  // Connect to WiFi as a station
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, wifiPassword);
-  Serial.print("Connecting to WiFi");
-  unsigned long startAttemptTime = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 15000)
-  {
-    Serial.print(".");
-    delay(500);
-  }
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    Serial.println("\nWiFi connected.");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  }
-  else
-  {
-    Serial.println("\nWiFi connection failed. Starting Access Point...");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(apSSID, apPassword);
-    Serial.print("AP IP address: ");
-    Serial.println(WiFi.softAPIP());
-  }
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    updatePressureFromAPI();
-  }
 
   // 1) Load your storedPressure from EEPROM up front:
   EEPROM.begin(EEPROM_SIZE);
   float storedPressure;
   EEPROM.get(EEPROM_PRESSURE_ADDR, storedPressure);
 
-  // 2) Now do your three‑way branch:
-  if (apiSuccess == true)
-  {
-    PressureSource = "API OpenWeather";
+
+  // Disable WiFi power saving mode
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
+
+  // Connect to WiFi as a station
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, wifiPassword);
+  Serial.print("Connecting to WiFi");
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 15000) {
+    Serial.print(".");
+    delay(500);
   }
-  else if (storedPressure > 500.0 && storedPressure < 1100.0)
-  {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected.");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWiFi connection failed. Starting Access Point...");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(apSSID, apPassword);
+    Serial.print("AP IP address: ");
+    Serial.println(WiFi.softAPIP());
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    updatePressureFromAPI();
+  }
+
+  // 2) Now do your three‑way branch:
+  if (apiSuccess == true) {
+    PressureSource = "API OpenWeather";
+  } else if (storedPressure > 500.0 && storedPressure < 1100.0) {
     lastLocalPressure = storedPressure;
     PressureSource = "EEPROM Memory";
-  }
-  else
-  {
+  } else {
     lastLocalPressure = 1013.25;
     PressureSource = "Default Sea-Level Pressure";
   }
@@ -1727,61 +1628,67 @@ void setup()
   timeClient.begin();
   timeClient.update();
   unsigned long currentEpoch = timeClient.getEpochTime();
-  if (currentEpoch > 100000)
-  {
+  if (currentEpoch > 100000) {
     lastSuccessfulNTP = currentEpoch;
     lastSyncMillis = millis();
     Serial.print("NTP Time set to: ");
     Serial.println(getTimeStampString());
-  }
-  else
-  {
+  } else {
     Serial.println("Failed to get NTP time.");
   }
 
   // -----------------------
   // SD Card Initialization and Log File Handling
   // -----------------------
+#if FEATURE_SD_MMC
+
   Serial.print("Initializing SD card...");
   SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0);
-  if (!SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5))
-  {
+
+  sdMounted = SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5);
+  if (!sdMounted) {
     Serial.println("Card Mount Failed");
-  }
-  else
-  {
-    ensureLogFileHasHeader(SD_MMC, "/log.csv"); // now the SD is mounted
+  } else {
     Serial.println("SD Card initialized.");
+    ensureLogFileHasHeader(SD_MMC, "/log.csv");  // SD is mounted
+
     String oldLogFile = "/log.csv";
     String timestamp = getTimeStampString();
     timestamp.replace(":", "");
     timestamp.replace(" ", "_");
     String newLogFile = "/" + timestamp + ".csv";
+
+    // These exists/remove/rename calls are safe now because sdMounted == true
     if (SD_MMC.exists(newLogFile.c_str()))
-    {
       SD_MMC.remove(newLogFile.c_str());
-    }
-    if (SD_MMC.exists(oldLogFile.c_str()))
-    {
-      if (SD_MMC.rename(oldLogFile.c_str(), newLogFile.c_str()))
-      {
+
+    if (SD_MMC.exists(oldLogFile.c_str())) {
+      if (SD_MMC.rename(oldLogFile.c_str(), newLogFile.c_str())) {
         Serial.println("Previous log file renamed to " + newLogFile);
         ensureLogFileHasHeader(SD_MMC, "/log.csv");
-      }
-      else
-      {
+      } else {
         Serial.println("Failed to rename log file " + oldLogFile);
       }
-    }
-    else
-    {
+    } else {
       Serial.println("No previous log file found.");
     }
   }
-  totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
-  usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
-  Serial.printf("Total space: %lluMB\n", totalSpace);
-  Serial.printf("Used space: %lluMB\n", usedSpace);
+
+  if (sdMounted) {
+    totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
+    usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
+  } else {
+    totalSpace = 0;
+    usedSpace = 0;
+  }
+
+#else
+  sdMounted = false;
+  totalSpace = 0;
+  usedSpace = 0;
+  Serial.println("SD_MMC disabled for this build.");
+#endif
+
 
   // -----------------------
   // Initialize I2C Bus for sensor communication
@@ -1791,46 +1698,34 @@ void setup()
   // -----------------------
   // Initialize sensors (MPU6050 and BMP280)
   // -----------------------
-  if (mpu.begin(0x68))
-  {
+  if (mpu.begin(0x68)) {
     mpuFound = true;
-    if (showSensorInitLog)
-    {
+    if (showSensorInitLog) {
       Serial.println("MPU6050 sensor found.");
     }
-  }
-  else
-  {
+  } else {
     mpuFound = false;
-    if (showSensorInitLog)
-    {
+    if (showSensorInitLog) {
       Serial.println("Could not find MPU6050 sensor. Check wiring!");
     }
   }
-  if (bmp.begin(0x76))
-  {
+  if (bmp.begin(0x76)) {
     bmpFound = true;
-    if (showSensorInitLog)
-    {
+    if (showSensorInitLog) {
       Serial.println("BMP280 sensor found.");
     }
-  }
-  else
-  {
+  } else {
     bmpFound = false;
-    if (showSensorInitLog)
-    {
+    if (showSensorInitLog) {
       Serial.println("Could not find BMP280 sensor. Check wiring!");
     }
   }
-  if (mpuFound)
-  {
+  if (mpuFound) {
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   }
-  if (bmpFound)
-  {
+  if (bmpFound) {
     bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
                     Adafruit_BMP280::SAMPLING_X2,
                     Adafruit_BMP280::SAMPLING_X16,
@@ -1886,124 +1781,131 @@ void setup()
   // Register Web Server Endpoints
   // -----------------------
   // Root route: serves static flight information page
-  server.on("/", HTTP_GET, []()
-            {
+  server.on("/", HTTP_GET, []() {
     sensorModeFlight = true;
     setAllLEDs(blueColor);
     server.sendHeader("Location", "/index.html");
-    server.send(302, "text/plain", "Redirecting..."); });
+    server.send(302, "text/plain", "Redirecting...");
+  });
 
   // Inline visualization‐mode handler:
-  server.on("/visualization", HTTP_GET, []()
-            {
+  server.on("/visualization", HTTP_GET, []() {
     sensorModeFlight = false;
     setAllLEDs(purpleColor);
     server.sendHeader("Location", "/visualization/index.html");
-    server.send(302, "text/plain", "Redirecting..."); });
+    server.send(302, "text/plain", "Redirecting...");
+  });
 
-  server.on("/files", HTTP_GET, []()
-            {
+  server.on("/files", HTTP_GET, []() {
     setAllLEDs(orangeColor);
     server.sendHeader("Location", "/files/index.html");
-    server.send(302, "text/plain", "Redirecting..."); });
+    server.send(302, "text/plain", "Redirecting...");
+  });
 
   // Serve the static visualization files from SPIFFS
   server.serveStatic("/visualization/", SPIFFS, "/visualization/");
   server.serveStatic("/files/", SPIFFS, "/files/");
 
-  server.on("/deleteFile", HTTP_GET, []()
-            {
+  server.on("/deleteFile", HTTP_GET, []() {
     blinkColor(redColor, 2, 250);
-    handleCombinedFileDelete(); });
+    handleCombinedFileDelete();
+  });
 
-  server.on("/deleteFileSPIFFS", HTTP_GET, []()
-            {
+  server.on("/deleteFileSPIFFS", HTTP_GET, []() {
     blinkColor(redColor, 2, 250);
-    handleSPIFFSFileDelete(); });
+    handleSPIFFSFileDelete();
+  });
 
-  server.on("/deleteFileSD", HTTP_GET, []()
-            {
+  server.on("/deleteFileSD", HTTP_GET, []() {
     blinkColor(redColor, 2, 250);
-    handleSDFileDelete(); });
+    handleSDFileDelete();
+  });
 
-  server.on("/downloadFile", HTTP_GET, []()
-            {
+  server.on("/downloadFile", HTTP_GET, []() {
     blinkColor(purpleColor, 2, 250);
-    handleCombinedFileDownload(); });
+    handleCombinedFileDownload();
+  });
 
-  server.on("/downloadFileSD", HTTP_GET, []()
-            {
-    blinkColor(purpleColor, 2, 250); 
-    handleSDFileDownload(); });
+  server.on("/downloadFileSD", HTTP_GET, []() {
+    blinkColor(purpleColor, 2, 250);
+    handleSDFileDownload();
+  });
 
-  server.on("/downloadFileSPIFFS", HTTP_GET, []()
-            {
-   blinkColor(purpleColor, 2, 250); 
-   handleSPIFFSFileDownload(); });
+  server.on("/downloadFileSPIFFS", HTTP_GET, []() {
+    blinkColor(purpleColor, 2, 250);
+    handleSPIFFSFileDownload();
+  });
 
   // --- Upload Endpoints ---
   server.on(
-      "/upload", HTTP_POST, []()
-      {
+    "/upload", HTTP_POST, []() {
       blinkColor(greenColor, 2, 250);
-      server.send(200, "text/plain", "SPIFFS Upload Successful"); },
-      handleFileUpload // <-- Handles actual file upload for SPIFFS
+      server.send(200, "text/plain", "SPIFFS Upload Successful");
+    },
+    handleFileUpload  // <-- Handles actual file upload for SPIFFS
   );
 
   server.on(
-      "/uploadsd", HTTP_POST, []()
-      {
+    "/uploadsd", HTTP_POST, []() {
       blinkColor(greenColor, 2, 250);
-      server.send(200, "text/plain", "SD Card Upload Successful"); },
-      handleFileUploadSD // <-- Handles actual file upload for SD
+      server.send(200, "text/plain", "SD Card Upload Successful");
+    },
+    handleFileUploadSD  // <-- Handles actual file upload for SD
   );
 
   server.on("/listfiles", HTTP_GET, handleListFilesJson);
 
   // Sensor endpoints: serve gyro, accelerometer, and temperature data.
-  server.on("/gyro", HTTP_GET, []()
-            { server.send(200, "application/json", getGyroReadings()); });
-  server.on("/acc", HTTP_GET, []()
-            { server.send(200, "application/json", getAccReadings()); });
-  server.on("/temp", HTTP_GET, []()
-            { server.send(200, "text/plain", getTemperatureReading()); });
+  server.on("/gyro", HTTP_GET, []() {
+    server.send(200, "application/json", getGyroReadings());
+  });
+  server.on("/acc", HTTP_GET, []() {
+    server.send(200, "application/json", getAccReadings());
+  });
+  server.on("/temp", HTTP_GET, []() {
+    server.send(200, "text/plain", getTemperatureReading());
+  });
   // Reset endpoints for individual gyro components.
-  server.on("/reset", HTTP_GET, []()
-            {
+  server.on("/reset", HTTP_GET, []() {
     gyroX = gyroY = gyroZ = 0;
-    server.send(200, "text/plain", "All gyro values reset"); });
-  server.on("/resetX", HTTP_GET, []()
-            {
+    server.send(200, "text/plain", "All gyro values reset");
+  });
+  server.on("/resetX", HTTP_GET, []() {
     gyroX = 0;
-    server.send(200, "text/plain", "Gyro X reset"); });
-  server.on("/resetY", HTTP_GET, []()
-            {
+    server.send(200, "text/plain", "Gyro X reset");
+  });
+  server.on("/resetY", HTTP_GET, []() {
     gyroY = 0;
-    server.send(200, "text/plain", "Gyro Y reset"); });
-  server.on("/resetZ", HTTP_GET, []()
-            {
+    server.send(200, "text/plain", "Gyro Y reset");
+  });
+  server.on("/resetZ", HTTP_GET, []() {
     gyroZ = 0;
-    server.send(200, "text/plain", "Gyro Z reset"); });
+    server.send(200, "text/plain", "Gyro Z reset");
+  });
 
   // Serve static dashboard files from SPIFFS
- // server.serveStatic("/", SPIFFS, "/index.html");  // This will serve /index.html for root
+  // server.serveStatic("/", SPIFFS, "/index.html");  // This will serve /index.html for root
   server.serveStatic("/index.html", SPIFFS, "/index.html");
   server.serveStatic("/style.css", SPIFFS, "/style.css");
   server.serveStatic("/script.js", SPIFFS, "/script.js");
 
 
-  server.on("/spiffsupload", HTTP_GET, []()
-            { server.send_P(200, "text/html", spiffsUploaderHTML); });
+  server.on("/spiffsupload", HTTP_GET, []() {
+    server.send_P(200, "text/html", spiffsUploaderHTML);
+  });
 
-  server.on("/deleteAllSD", HTTP_GET, []()
-            { handleDeleteAllSD(); });
-  server.on("/deleteAllSD", HTTP_POST, []()
-            { handleDeleteAllSD(); });
+  server.on("/deleteAllSD", HTTP_GET, []() {
+    handleDeleteAllSD();
+  });
+  server.on("/deleteAllSD", HTTP_POST, []() {
+    handleDeleteAllSD();
+  });
 
   server.on(
-      "/spiffsupload", HTTP_POST, []()
-      { server.send(200, "text/plain", "Upload complete! Refresh to upload more files."); },
-      handleSpiffsUpload);
+    "/spiffsupload", HTTP_POST, []() {
+      server.send(200, "text/plain", "Upload complete! Refresh to upload more files.");
+    },
+    handleSpiffsUpload);
 
   server.begin();
   webSocket.begin();
@@ -2013,34 +1915,52 @@ void setup()
 // -----------------------
 // Main Loop Function
 // -----------------------
-void loop()
-{
+void loop() {
   server.handleClient();
   webSocket.loop();
 
   // Update pressure from API if needed
-  if (WiFi.status() == WL_CONNECTED)
-  {
+  if (WiFi.status() == WL_CONNECTED) {
     if (!apiPressureUpdated)
       updatePressureFromAPI();
-  }
-  else
-  {
+  } else {
     apiPressureUpdated = false;
   }
 
   // Update SD and SPIFFS stats
-  totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
-  usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
+#if FEATURE_SD_MMC
+  if (sdMounted) {
+    totalSpace = SD_MMC.totalBytes() / (1024 * 1024);
+    usedSpace = SD_MMC.usedBytes() / (1024 * 1024);
+  } else {
+    totalSpace = 0;
+    usedSpace = 0;
+  }
+#else
+  totalSpace = 0;
+  usedSpace = 0;
+#endif
+
   size_t spiffsTotal = SPIFFS.totalBytes() / 1024;
   size_t spiffsUsed = SPIFFS.usedBytes() / 1024;
 
   // Sensor reads
-  float bmpTemp = bmp.readTemperature();
-  float pressure = bmp.readPressure() / 100.0F;
-  float absoluteAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
+  float bmpTemp = NAN, pressure = NAN, absoluteAltitude = NAN;
+  if (bmpFound) {
+    bmpTemp = bmp.readTemperature();
+    pressure = bmp.readPressure() / 100.0F;
+    absoluteAltitude = bmp.readAltitude(getLocalSeaLevelPressure());
+  }
+
   sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+  memset(&a, 0, sizeof(a));
+  memset(&g, 0, sizeof(g));
+  memset(&temp, 0, sizeof(temp));
+
+  if (mpuFound) {
+    mpu.getEvent(&a, &g, &temp);
+  }
+
 
   // Axis correction + calibration
   float corrAx, corrAy, corrAz;
@@ -2059,8 +1979,7 @@ void loop()
   float relativeAltitude = (parachuteStatus == "unarmed") ? 0 : absoluteAltitude - baselineAltitude;
   // --- Filtered altitude + vertical speed ---
   unsigned long _nowAltMs = millis();
-  if (lastAltUpdateMs == 0)
-  {
+  if (lastAltUpdateMs == 0) {
     filteredRelAlt = relativeAltitude;
     prevFilteredRelAlt = relativeAltitude;
     lastAltUpdateMs = _nowAltMs;
@@ -2089,8 +2008,7 @@ void loop()
 
   // --- Rocket status & apogee detection ---
   // Launch detection (use Z-up calibrated acceleration)
-  if (rocketStatus == "On Launchpad" && relAccZ > LAUNCH_ACC_THRESHOLD)
-  {
+  if (rocketStatus == "On Launchpad" && relAccZ > LAUNCH_ACC_THRESHOLD) {
     rocketStatus = "Launched";
     apogeeDetected = false;
     apogeeAltitude = 0.0f;
@@ -2098,21 +2016,16 @@ void loop()
   }
 
   // Apogee detection (requires sufficient altitude and sustained negative vertical speed)
-  if (!apogeeDetected && filteredRelAlt > MIN_ALTITUDE_FOR_APOGEE)
-  {
-    if (verticalSpeed < NEG_VS_CONFIRM)
-    {
+  if (!apogeeDetected && filteredRelAlt > MIN_ALTITUDE_FOR_APOGEE) {
+    if (verticalSpeed < NEG_VS_CONFIRM) {
       negVsCount++;
-      if (negVsCount >= NEG_COUNT_CONFIRM)
-      {
+      if (negVsCount >= NEG_COUNT_CONFIRM) {
         apogeeDetected = true;
         apogeeAltitude = filteredRelAlt;
         apogeeMillis = millis();
         rocketStatus = "Max Apogee";
       }
-    }
-    else
-    {
+    } else {
       if (negVsCount > 0)
         negVsCount--;
     }
@@ -2120,25 +2033,20 @@ void loop()
 
   // Alleen “On Ground” toestaan ná daadwerkelijke vlucht
   bool wasInFlight = (rocketStatus == "Launched" || rocketStatus == "Max Apogee");
-  if (wasInFlight && fabs(filteredRelAlt) < 1.0f && fabs(verticalSpeed) < 0.05f)
-  {
+  if (wasInFlight && fabs(filteredRelAlt) < 1.0f && fabs(verticalSpeed) < 0.05f) {
     if (groundCandidateSince == 0)
       groundCandidateSince = millis();
-    else if (millis() - groundCandidateSince > GROUND_SETTLE_MS)
-    {
+    else if (millis() - groundCandidateSince > GROUND_SETTLE_MS) {
       rocketStatus = "On Ground";
     }
-  }
-  else
-  {
+  } else {
     groundCandidateSince = 0;
   }
 
   // --- Trigger evaluatie & oorzaakvastlegging (vervangt het hele oude blok) ---
-  uiTriggeredBy = lastTriggeredBy; // wat we aan de UI tonen
+  uiTriggeredBy = lastTriggeredBy;  // wat we aan de UI tonen
 
-  if (parachuteStatus == "armed")
-  {
+  if (parachuteStatus == "armed") {
     // Terwijl we armed zijn, is de default-weergave "NotTriggered" totdat iets triggert
     uiTriggeredBy = "NotTriggered";
 
@@ -2150,31 +2058,23 @@ void loop()
     const bool triggerApogee = enApogee ? apogeeDetected : false;
 
     // AND/OR logica over alleen de ingeschakelde triggers
-    const bool enabled[5] = {enAltDrop, enAccX, enAccY, enAccZ, enApogee};
-    const bool fired[5] = {triggerAlt, triggerAccX, triggerAccY, triggerAccZ, triggerApogee};
+    const bool enabled[5] = { enAltDrop, enAccX, enAccY, enAccZ, enApogee };
+    const bool fired[5] = { triggerAlt, triggerAccX, triggerAccY, triggerAccZ, triggerApogee };
     const bool anyEnabled = enabled[0] || enabled[1] || enabled[2] || enabled[3] || enabled[4];
 
     bool triggerCondition = false;
-    if (anyEnabled)
-    {
-      if (useAndLogic)
-      {
+    if (anyEnabled) {
+      if (useAndLogic) {
         triggerCondition = true;
-        for (int i = 0; i < 5; i++)
-        {
-          if (enabled[i] && !fired[i])
-          {
+        for (int i = 0; i < 5; i++) {
+          if (enabled[i] && !fired[i]) {
             triggerCondition = false;
             break;
           }
         }
-      }
-      else
-      {
-        for (int i = 0; i < 5; i++)
-        {
-          if (enabled[i] && fired[i])
-          {
+      } else {
+        for (int i = 0; i < 5; i++) {
+          if (enabled[i] && fired[i]) {
             triggerCondition = true;
             break;
           }
@@ -2183,8 +2083,7 @@ void loop()
     }
 
     // Track what triggered
-    if (triggerCondition)
-    {
+    if (triggerCondition) {
       String triggersList;
       if (triggerAlt)
         triggersList += "Threshold Altitude Drop,";
@@ -2197,21 +2096,18 @@ void loop()
       if (triggerApogee)
         triggersList += "Apogee Descent,";
       if (triggersList.length() > 0)
-        triggersList.remove(triggersList.length() - 1); // strip trailing comma
+        triggersList.remove(triggersList.length() - 1);  // strip trailing comma
       lastTriggeredBy = triggersList;
       uiTriggeredBy = lastTriggeredBy;
-      parachuteRelease(); // zet status → "released"
+      parachuteRelease();  // zet status → "released"
     }
-  }
-  else
-  {
+  } else {
     // Niet-armed: blijf de laatst bekende oorzaak tonen (of NotTriggered als er geen is)
     uiTriggeredBy = lastTriggeredBy.length() ? lastTriggeredBy : "NotTriggered";
   }
 
   // --- Print sensor info (now uses updated triggeredBy) ---
-  if (debugSerial)
-  {
+  if (debugSerial) {
     Serial.print(getTimeStampString());
     Serial.print(" BMP280 Temp: ");
     Serial.println(bmpTemp);
@@ -2294,56 +2190,64 @@ void loop()
   char dataString[700];
   String currentTimestamp = getTimeStampString();
   snprintf(
-      dataString, sizeof(dataString),
-      "%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,1013.25,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,\"%s\",%d,%d,%d,%d,%.3f,%s,%d,%.2f,%d\n",
-      currentTimestamp.c_str(), // Timestamp
-      bmpTemp,
-      pressure,
-      absoluteAltitude,
-      relativeAltitude,
-      altitudeDrop,
-      temp.temperature,
-      rawAccX, rawAccY, rawAccZ,
-      relAccX, relAccY, relAccZ,
-      g.gyro.x, g.gyro.y, g.gyro.z,
-      parachuteStatus.c_str(),
-      lastLocalPressure,
-      PressureSource.c_str(),
-      maxAbsoluteAltitude, minAbsoluteAltitude,
-      maxRelativeAltitude, minRelativeAltitude,
-      maxAltitudeDrop, minAltitudeDrop,
-      totalSpace, usedSpace,
-      spiffsTotal, spiffsUsed,
-      currentLatitude, currentLongitude,
-      altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
-      useAndLogic ? "AND" : "OR",
-      axisConfig,
-      uiTriggeredBy.c_str(),
-      enAltDrop ? 1 : 0,
-      enAccX ? 1 : 0,
-      enAccY ? 1 : 0,
-      enAccZ ? 1 : 0,
-      verticalSpeed,
-      rocketStatus.c_str(),
-      apogeeDetected ? 1 : 0,
-      apogeeAltitude,
-      enApogee ? 1 : 0);
+    dataString, sizeof(dataString),
+    "%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,1013.25,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%u,%u,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%s,%d,\"%s\",%d,%d,%d,%d,%.3f,%s,%d,%.2f,%d\n",
+    currentTimestamp.c_str(),  // Timestamp
+    bmpTemp,
+    pressure,
+    absoluteAltitude,
+    relativeAltitude,
+    altitudeDrop,
+    temp.temperature,
+    rawAccX, rawAccY, rawAccZ,
+    relAccX, relAccY, relAccZ,
+    g.gyro.x, g.gyro.y, g.gyro.z,
+    parachuteStatus.c_str(),
+    lastLocalPressure,
+    PressureSource.c_str(),
+    maxAbsoluteAltitude, minAbsoluteAltitude,
+    maxRelativeAltitude, minRelativeAltitude,
+    maxAltitudeDrop, minAltitudeDrop,
+    totalSpace, usedSpace,
+    spiffsTotal, spiffsUsed,
+    currentLatitude, currentLongitude,
+    altitudeDropThreshold, accXThreshold, accYThreshold, accZThreshold,
+    useAndLogic ? "AND" : "OR",
+    axisConfig,
+    uiTriggeredBy.c_str(),
+    enAltDrop ? 1 : 0,
+    enAccX ? 1 : 0,
+    enAccY ? 1 : 0,
+    enAccZ ? 1 : 0,
+    verticalSpeed,
+    rocketStatus.c_str(),
+    apogeeDetected ? 1 : 0,
+    apogeeAltitude,
+    enApogee ? 1 : 0);
 
   checkSpiffsSpaceAndWarn();
-  appendCsv(SD_MMC, "/log.csv", dataString);
-  if ((parachuteStatus == "armed" || parachuteStatus == "released") && spiffsLoggingAllowed)
-  {
+
+#if FEATURE_SD_MMC
+  if (sdMounted) {
+    appendCsv(SD_MMC, "/log.csv", dataString);
+  } else {
+    appendCsv(SPIFFS, "/log.csv", dataString);
+  }
+#else
+  appendCsv(SPIFFS, "/log.csv", dataString);
+#endif
+
+  if ((parachuteStatus == "armed" || parachuteStatus == "released") && spiffsLoggingAllowed) {
     appendCsv(SPIFFS, "/log.csv", dataString);
   }
 
+
   // --- WebSocket Output (also includes new fields) ---
-  if (sensorModeFlight)
-  {
+  if (sensorModeFlight) {
     static unsigned long previousMillis = 0;
     int interval = 40;
     unsigned long nowMillis = millis();
-    if ((nowMillis - previousMillis) > interval)
-    {
+    if ((nowMillis - previousMillis) > interval) {
       String jsonString = "";
       StaticJsonDocument<1536> doc;
       JsonObject object = doc.to<JsonObject>();
@@ -2354,7 +2258,7 @@ void loop()
       object["MinAltDrop"] = minAltitudeDrop;
       object["BMP280Temp"] = bmpTemp;
       object["BMP280Pressure"] = pressure;
-      object["MPU6050Temp"] = temp.temperature; // GOED
+      object["MPU6050Temp"] = temp.temperature;  // GOED
       object["RawAccX"] = rawAccX;
       object["RawAccY"] = rawAccY;
       object["RawAccZ"] = rawAccZ;
@@ -2412,24 +2316,19 @@ void loop()
       webSocket.broadcastTXT(jsonString);
       previousMillis = nowMillis;
     }
-  }
-  else
-  {
+  } else {
     // Visualization mode (unchanged)
-    if ((millis() - lastTimeGyro) > gyroDelay)
-    {
+    if ((millis() - lastTimeGyro) > gyroDelay) {
       String msg = "{\"event\":\"gyro_readings\", \"data\":" + getGyroReadings() + "}";
       webSocket.broadcastTXT(msg);
       lastTimeGyro = millis();
     }
-    if ((millis() - lastTimeAcc) > accelerometerDelay)
-    {
+    if ((millis() - lastTimeAcc) > accelerometerDelay) {
       String msg = "{\"event\":\"accelerometer_readings\", \"data\":" + getAccReadings() + "}";
       webSocket.broadcastTXT(msg);
       lastTimeAcc = millis();
     }
-    if ((millis() - lastTimeTemperature) > temperatureDelay)
-    {
+    if ((millis() - lastTimeTemperature) > temperatureDelay) {
       String msg = "{\"event\":\"temperature_reading\", \"data\":\"" + getTemperatureReading() + "\"}";
       webSocket.broadcastTXT(msg);
       lastTimeTemperature = millis();
